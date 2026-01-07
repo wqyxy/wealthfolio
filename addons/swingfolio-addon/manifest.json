@@ -1,9 +1,9 @@
 {
-  "id": "swingfolio-addon",
-  "name": "Swingfolio: Simple Stock Trading Tracker",
-  "version": "1.2.0",
-  "description": "A simple swing stock trading tracker with performance analytics and calendar views",
-  "author": "Wealthfolio",
+  "id": "swingfolio-edited",
+  "name": "swingfolio-edited",
+  "version": "1.0.0",
+  "description": "A Wealthfolio addon for swingfolio-edited",
+  "author": "bruce",
   "main": "dist/addon.js",
   "sdkVersion": "2.0.0",
   "enabled": true,
@@ -33,5 +33,9 @@
       "functions": ["sidebar.addItem", "router.add"],
       "purpose": "Add navigation and routing for swing trading interface"
     }
-  ]
+
+
+  ],
+  "keywords": ["wealthfolio", "addon"],
+  "license": "MIT"
 }

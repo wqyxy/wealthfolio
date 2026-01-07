@@ -22,6 +22,9 @@ import { OpenTradesTable } from '../components/open-trades-table';
 import { useSwingDashboard } from '../hooks/use-swing-dashboard';
 import { useSwingPreferences } from '../hooks/use-swing-preferences';
 
+
+import type { OpenPosition } from '../types';
+
 const periods = [
   { value: '1M' as const, label: '1M' },
   { value: '3M' as const, label: '3M' },
@@ -68,6 +71,72 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
 
   const { data: dashboardData, isLoading, error, refetch } = useSwingDashboard(ctx, selectedPeriod);
   const { preferences } = useSwingPreferences(ctx);
+
+  // Export to CSV function
+
+
+  const exportToCSV = (openPositions: OpenPosition[]) => {
+    // 直接处理空数据（不提示，按钮已 disabled）
+    if (openPositions.length === 0) {
+      return;
+    }
+
+    const headers = [
+      'Symbol',
+      'Asset Name',
+      'Quantity',
+      'Average Cost',
+      'Current Price',
+      'Market Value',
+      'Unrealized P/L',
+      'Unrealized Return %',
+      'Days Open',
+      'Currency',
+      'Account',
+    ];
+
+    const rows = openPositions.map(pos => [
+      pos.symbol,
+      pos.assetName || '',
+      pos.quantity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 }),
+      pos.averageCost.toFixed(2),
+      pos.currentPrice.toFixed(2),
+      pos.marketValue.toFixed(2),
+      pos.unrealizedPL.toFixed(2),
+      (pos.unrealizedReturnPercent * 100).toFixed(2) + '%',
+      pos.daysOpen,
+      pos.currency,
+      pos.accountName,
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `open-positions-${new Date().toISOString().slice(0,10)}.csv`;
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // 可选：用 console 确认（开发时看）
+    console.log('CSV exported:', openPositions.length, 'positions');
+  };
+
+
+  // Export to CSV function END
+
+
+
+
+
+
+
 
   const handleNavigateToActivities = () => {
     ctx.api.navigation.navigate('/addons/swingfolio/activities');
@@ -357,11 +426,23 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
 
           {/* Open Positions - Full Width on Mobile */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            {/* <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-base sm:text-lg">Open Positions</CardTitle>
               <span className="text-muted-foreground text-sm">
                 {openPositions.length} {openPositions.length === 1 ? 'position' : 'positions'}
               </span>
+            </CardHeader> */}
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Open Positions</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportToCSV(openPositions)}
+                disabled={isLoading || openPositions.length === 0}
+              >
+                <Icons.Download className="mr-2 h-4 w-4" />
+                Export to CSV
+              </Button>
             </CardHeader>
             <CardContent className="px-2 sm:px-6">
               <OpenTradesTable positions={openPositions} />
