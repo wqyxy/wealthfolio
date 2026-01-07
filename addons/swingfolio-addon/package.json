@@ -1,12 +1,9 @@
 {
-  "name": "swingfolio-addon",
-  "version": "1.2.0",
-  "description": "A simple swing stock trading tracker with performance analytics and calendar views",
+  "name": "wealthfolio-swingfolio-edited-addon",
+  "version": "1.0.0",
+  "description": "A Wealthfolio addon for swingfolio-edited",
   "type": "module",
   "main": "dist/addon.js",
-  "author": "Wealthfolio",
-  "license": "MIT",
-  "homepage": "https://github.com/afadil/wealthfolio",
   "keywords": [
     "wealthfolio",
     "addon",
@@ -16,7 +13,7 @@
     "trading",
     "calendar"
   ],
-  "scripts": {
+    "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",
     "dev:server": "wealthfolio dev",
@@ -31,11 +28,14 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.90.5",
-    "@wealthfolio/addon-sdk": "workspace:*",
-    "@wealthfolio/ui": "workspace:*",
+    "@tanstack/react-query": "^5.90.16",
+    "@wealthfolio/addon-sdk": "^2.0.0",
+    "@wealthfolio/ui": "^2.0.0",
     "clsx": "^2.1.1",
-    "date-fns": "^4.1.0"
+    "date-fns": "^4.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.13",
@@ -43,19 +43,10 @@
     "@types/react": "^19.1.1",
     "@types/react-dom": "^19.1.1",
     "@vitejs/plugin-react": "^5.0.2",
-    "@wealthfolio/addon-dev-tools": "workspace:*",
+    "@wealthfolio/addon-dev-tools": "^2.0.0",
     "rollup-plugin-external-globals": "^0.13.0",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
     "vite": "^7.1.5"
-  },
-  "peerDependencies": {
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1"
-  },
-  "files": [
-    "dist/",
-    "manifest.json",
-    "README.md"
-  ]
+  }
 }
