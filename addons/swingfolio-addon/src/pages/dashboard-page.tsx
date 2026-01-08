@@ -1,25 +1,11 @@
 import type { AddonContext } from '@wealthfolio/addon-sdk';
-import {
-  AnimatedToggleGroup,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  GainAmount,
-  GainPercent,
-  Icons,
-  Page,
-  PageContent,
-  PageHeader,
-  Skeleton,
-  Switch,
-} from '@wealthfolio/ui';
+import { AnimatedToggleGroup, Button, Card, CardContent, CardHeader, CardTitle, GainAmount, GainPercent, Icons, Page, PageContent, PageHeader, Skeleton, Switch, } from '@wealthfolio/ui';
 import { useState } from 'react';
 import { AdaptiveCalendarView } from '../components/adaptive-calendar-view';
 import { DistributionCharts } from '../components/distribution-charts';
 import { EquityCurveChart } from '../components/equity-curve-chart';
 import { OpenTradesTable } from '../components/open-trades-table';
+import { useCurrencyConversion } from '../hooks/use-currency-conversion';
 import { useSwingDashboard } from '../hooks/use-swing-dashboard';
 import { useSwingPreferences } from '../hooks/use-swing-preferences';
 import type { OpenPosition } from '../types';
@@ -64,6 +50,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
   const [mergePositionsEnabled, setMergePositionsEnabled] = useState(true);
   const { data: dashboardData, isLoading, error, refetch } = useSwingDashboard(ctx, selectedPeriod);
   const { preferences } = useSwingPreferences(ctx);
+  const { baseCurrency, convertToBaseCurrency } = useCurrencyConversion({ ctx });
 
   // Export to CSV function
   const exportToCSV = (openPositions: OpenPosition[]) => {
@@ -75,41 +62,44 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
     // Check if we should export merged positions
     const positionsToExport = mergePositionsEnabled ? mergePositions(openPositions) : openPositions;
 
-    // Headers for merged positions
-    if (mergePositionsEnabled) {
-      const headers = [
-        'Symbol',
-        'Asset Name',
-        'Quantity',
-        'Average Cost',
-        'Current Price',
-        'Market Value',
-        'Unrealized P/L',
-        'Unrealized Return %',
-        'Days Open (weighted avg)',
-        'Currency',
-        'Accounts',
-        'Position %',
-      ];
-
-      const rows = positionsToExport.map(pos => [
-        pos.symbol,
-        pos.assetName || '',
-        pos.quantity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 }),
-        pos.averageCost.toFixed(4),
-        pos.currentPrice.toFixed(2),
-        pos.marketValue.toFixed(2),
-        pos.unrealizedPL.toFixed(2),
-        (pos.unrealizedReturnPercent * 100).toFixed(2) + '%',
-        pos.daysOpenWeighted.toFixed(1),
-        pos.currency,
-        pos.accounts,
-        pos.positionPct.toFixed(2) + '%',
-      ]);
+// Headers for merged positions
+if (mergePositionsEnabled) {
+  const headers = [
+    'Symbol',
+    'Asset Name',
+    'Quantity',
+    'Average Cost',
+    'Current Price',
+    'Market Value',
+    'Base Currency Market Value',
+    'Unrealized P/L',
+    'Unrealized Return %',
+    'Days Open (weighted avg)',
+    'Currency',
+    'Accounts',
+    'Position %',
+  ];
+  const rows = positionsToExport.map(pos => [
+    pos.symbol,
+    pos.assetName || '',
+    pos.quantity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 }),
+    pos.averageCost.toFixed(4),
+    pos.currentPrice.toFixed(2),
+    pos.marketValue.toFixed(2),
+    // For merged positions, use the pre-calculated marketValueBaseCurrency
+    pos.marketValueBaseCurrency !== undefined ? pos.marketValueBaseCurrency.toFixed(2) :
+    (baseCurrency && convertToBaseCurrency ? convertToBaseCurrency(pos.marketValue, pos.currency).toFixed(2) : 'N/A'),
+    pos.unrealizedPL.toFixed(2),
+    (pos.unrealizedReturnPercent * 100).toFixed(2) + '%',
+    pos.daysOpenWeighted.toFixed(1),
+    pos.currency,
+    pos.accounts,
+    pos.positionPct.toFixed(2) + '%',
+  ]);
 
       const csvContent = [
         headers.join(','),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
       ].join('\n');
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -126,38 +116,39 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
       return;
     }
 
-    // Original headers for unmerged positions
-    const headers = [
-      'Symbol',
-      'Asset Name',
-      'Quantity',
-      'Average Cost',
-      'Current Price',
-      'Market Value',
-      'Unrealized P/L',
-      'Unrealized Return %',
-      'Days Open',
-      'Currency',
-      'Account',
-    ];
-
-    const rows = openPositions.map(pos => [
-      pos.symbol,
-      pos.assetName || '',
-      pos.quantity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 }),
-      pos.averageCost.toFixed(2),
-      pos.currentPrice.toFixed(2),
-      pos.marketValue.toFixed(2),
-      pos.unrealizedPL.toFixed(2),
-      (pos.unrealizedReturnPercent * 100).toFixed(2) + '%',
-      pos.daysOpen,
-      pos.currency,
-      pos.accountName,
-    ]);
+// Original headers for unmerged positions
+const headers = [
+  'Symbol',
+  'Asset Name',
+  'Quantity',
+  'Average Cost',
+  'Current Price',
+  'Market Value',
+  'Base Currency Market Value',
+  'Unrealized P/L',
+  'Unrealized Return %',
+  'Days Open',
+  'Currency',
+  'Account',
+];
+const rows = openPositions.map(pos => [
+  pos.symbol,
+  pos.assetName || '',
+  pos.quantity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 }),
+  pos.averageCost.toFixed(2),
+  pos.currentPrice.toFixed(2),
+  pos.marketValue.toFixed(2),
+  baseCurrency && convertToBaseCurrency ? convertToBaseCurrency(pos.marketValue, pos.currency).toFixed(2) : 'N/A',
+  pos.unrealizedPL.toFixed(2),
+  (pos.unrealizedReturnPercent * 100).toFixed(2) + '%',
+  pos.daysOpen,
+  pos.currency,
+  pos.accountName,
+]);
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -173,7 +164,6 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
     // 可选：用 console 确认（开发时看）
     console.log('CSV exported:', openPositions.length, 'positions');
   };
-
   // Export to CSV function END
 
   const handleNavigateToActivities = () => {
@@ -202,7 +192,6 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
   const mergePositions = (positions: OpenPosition[]): any[] => {
     // Group positions by symbol and currency
     const groupedPositions = new Map<string, OpenPosition[]>();
-
     positions.forEach(position => {
       const key = `${position.symbol}|${position.currency}`;
       if (!groupedPositions.has(key)) {
@@ -266,8 +255,13 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
       const groupUsdValue = positionsWithUsdValue
         .filter(item => group.includes(item.position))
         .reduce((sum, item) => sum + item.usdValue, 0);
-
       const positionPct = totalUsdValue > 0 ? (groupUsdValue / totalUsdValue) * 100 : 0;
+
+      // Calculate base currency market value if currency conversion is available
+      let marketValueBaseCurrency: number | undefined;
+      if (baseCurrency && convertToBaseCurrency) {
+        marketValueBaseCurrency = convertToBaseCurrency(marketValue, currency);
+      }
 
       mergedPositions.push({
         symbol,
@@ -282,6 +276,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
         currency,
         accounts,
         positionPct,
+        marketValueBaseCurrency,
       });
     });
 
@@ -490,25 +485,16 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                 </div>
               </CardHeader>
               <CardContent className="flex min-h-0 flex-1 flex-col py-4 sm:py-6">
-                <EquityCurveChart
-                  data={chartEquityData}
-                  currency={metrics.currency}
-                  periodType={
-                    selectedPeriod === '1M' ? 'daily' : selectedPeriod === '3M' ? 'weekly' : 'monthly'
-                  }
-                />
+                <EquityCurveChart data={chartEquityData} currency={metrics.currency} periodType={
+                  selectedPeriod === '1M' ? 'daily' :
+                  selectedPeriod === '3M' ? 'weekly' : 'monthly'
+                } />
               </CardContent>
             </Card>
 
             <Card className="flex flex-col pt-0">
               <CardContent className="flex min-h-0 flex-1 flex-col py-4 sm:py-6">
-                <AdaptiveCalendarView
-                  calendar={calendar}
-                  selectedPeriod={selectedPeriod}
-                  selectedYear={selectedYear}
-                  onYearChange={setSelectedYear}
-                  currency={metrics.currency}
-                />
+                <AdaptiveCalendarView calendar={calendar} selectedPeriod={selectedPeriod} selectedYear={selectedYear} onYearChange={setSelectedYear} currency={metrics.currency} />
               </CardContent>
             </Card>
           </div>
@@ -521,6 +507,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                 {openPositions.length} {openPositions.length === 1 ? 'position' : 'positions'}
               </span>
             </CardHeader> */}
+
             <CardHeader className="flex flex-row items-center justify-between">
               <div className="flex items-center space-x-4">
                 <CardTitle>Open Positions</CardTitle>
@@ -529,18 +516,18 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                   <Switch checked={mergePositionsEnabled} onCheckedChange={setMergePositionsEnabled} />
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportToCSV(openPositions)}
-                disabled={isLoading || openPositions.length === 0}
-              >
+              <Button variant="outline" size="sm" onClick={() => exportToCSV(openPositions)} disabled={isLoading || openPositions.length === 0}>
                 <Icons.Download className="mr-2 h-4 w-4" />
                 Export to CSV
               </Button>
             </CardHeader>
+
             <CardContent className="px-2 sm:px-6">
-              <OpenTradesTable positions={mergePositionsEnabled ? mergePositions(openPositions) : openPositions} />
+              <OpenTradesTable
+                positions={mergePositionsEnabled ? mergePositions(openPositions) : openPositions}
+                baseCurrency={baseCurrency}
+                convertToBaseCurrency={convertToBaseCurrency}
+              />
             </CardContent>
           </Card>
 
@@ -555,17 +542,13 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
 function DashboardSkeleton() {
   return (
     <Page>
-      <PageHeader
-        heading="Trading Dashboard"
-        text="Track your trading performance and analytics"
-        actions={
-          <>
-            <Skeleton className="h-9 w-[280px]" />
-            <Skeleton className="h-9 w-[100px] sm:w-[140px]" />
-            <Skeleton className="h-9 w-9" />
-          </>
-        }
-      />
+      <PageHeader heading="Trading Dashboard" text="Track your trading performance and analytics" actions={
+        <>
+          <Skeleton className="h-9 w-[280px]" />
+          <Skeleton className="h-9 w-[100px] sm:w-[140px]" />
+          <Skeleton className="h-9 w-9" />
+        </>
+      } />
       <PageContent>
         <div className="space-y-4 sm:space-y-6">
           <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-3">
@@ -582,6 +565,7 @@ function DashboardSkeleton() {
               </Card>
             ))}
           </div>
+
           <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader>
@@ -591,6 +575,7 @@ function DashboardSkeleton() {
                 <Skeleton className="h-[250px] w-full sm:h-[300px]" />
               </CardContent>
             </Card>
+
             <Card>
               <CardHeader>
                 <Skeleton className="h-5 w-[150px] sm:h-6 sm:w-[180px]" />

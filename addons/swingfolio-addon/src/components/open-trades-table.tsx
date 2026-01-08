@@ -15,13 +15,16 @@ interface MergedPosition {
   currency: string;
   accounts: string;
   positionPct: number;
+  marketValueBaseCurrency?: number; // Added for base currency market value
 }
 
 interface OpenTradesTableProps {
   positions: OpenPosition[] | MergedPosition[];
+  baseCurrency?: string;
+  convertToBaseCurrency?: (amount: number, fromCurrency: string) => number;
 }
 
-export function OpenTradesTable({ positions }: OpenTradesTableProps) {
+export function OpenTradesTable({ positions, baseCurrency, convertToBaseCurrency }: OpenTradesTableProps) {
   if (positions.length === 0) {
     return (
       <div className="flex h-[300px] w-full items-center justify-center">
@@ -42,20 +45,21 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
     <div className="space-y-4">
       <div className="rounded-md border">
         <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[60px]"></TableHead>
-              <TableHead>Symbol</TableHead>
-              <TableHead className="text-right">Quantity</TableHead>
-              <TableHead className="text-right">Avg Cost</TableHead>
-              <TableHead className="text-right">Current</TableHead>
-              <TableHead className="text-right">Market Value</TableHead>
-              <TableHead className="text-right">P/L</TableHead>
-              <TableHead className="text-right">Return %</TableHead>
-              <TableHead className="text-center">Days</TableHead>
-              {isMergedView && <TableHead className="text-right">Position %</TableHead>}
-            </TableRow>
-          </TableHeader>
+<TableHeader>
+  <TableRow>
+    <TableHead className="w-[60px]"></TableHead>
+    <TableHead>Symbol</TableHead>
+    <TableHead className="text-right">Quantity</TableHead>
+    <TableHead className="text-right">Avg Cost</TableHead>
+    <TableHead className="text-right">Current</TableHead>
+<TableHead className="text-right">Market Value</TableHead>
+{baseCurrency && <TableHead className="text-right">Base Currency Market Value</TableHead>}
+    <TableHead className="text-right">P/L</TableHead>
+    <TableHead className="text-right">Return %</TableHead>
+    <TableHead className="text-center">Days</TableHead>
+    {isMergedView && <TableHead className="text-right">Position %</TableHead>}
+  </TableRow>
+</TableHeader>
           <TableBody>
             {positions.map((position, index) => (
               <TableRow key={index}>
@@ -84,12 +88,32 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
                 <TableCell className="text-right">
                   {position.currentPrice.toLocaleString('en-US', { style: 'currency', currency: position.currency })}
                 </TableCell>
-                <TableCell className="text-right">
-                  {position.marketValue.toLocaleString('en-US', { style: 'currency', currency: position.currency })}
-                </TableCell>
-                <TableCell className="text-right">
-                  <GainAmount value={position.unrealizedPL} currency={position.currency} />
-                </TableCell>
+<TableCell className="text-right">
+  {position.marketValue.toLocaleString('en-US', { style: 'currency', currency: position.currency })}
+</TableCell>
+{baseCurrency && (
+  <TableCell className="text-right">
+    {/* For merged positions, use the pre-calculated marketValueBaseCurrency */}
+    {isMergedView && 'marketValueBaseCurrency' in position && position.marketValueBaseCurrency !== undefined ? (
+      new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: baseCurrency,
+      }).format(position.marketValueBaseCurrency)
+    ) : convertToBaseCurrency ? (
+      new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: baseCurrency,
+      }).format(
+        convertToBaseCurrency(position.marketValue, position.currency)
+      )
+    ) : (
+      <span className="text-muted-foreground">N/A</span>
+    )}
+  </TableCell>
+)}
+<TableCell className="text-right">
+  <GainAmount value={position.unrealizedPL} currency={position.currency} />
+</TableCell>
                 <TableCell className="text-right">
                   <GainPercent value={position.unrealizedReturnPercent} />
                 </TableCell>
