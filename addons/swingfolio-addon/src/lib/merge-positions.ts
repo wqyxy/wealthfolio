@@ -201,17 +201,33 @@ export function mergePositions(
         totalCost += pos.quantity * pos.averageCostBase;
       });
 
-      // Calculate merged average cost
-      const mergedAverageCost = mergedQuantity > 0 ? totalCost / mergedQuantity : 0;
+      // Calculate merged average cost in base currency
+      const mergedAverageCostBase = mergedQuantity > 0 ? totalCost / mergedQuantity : 0;
+
+      // Convert merged average cost back to primary currency
+      const mergedAverageCost = convertToBaseCurrencyAmount(
+        mergedAverageCostBase,
+        baseCurrency,
+        primary.currency,
+        convertToBaseCurrency
+      );
 
       // Step 6: Recalculate merged market value, unrealized P/L, and return
-      // Recalculate market value using merged quantity and primary current price (base currency)
-      const mergedMarketValue = mergedQuantity * convertedPositions[0].currentPriceBase;
+      // Calculate merged market value in base currency, then convert back to primary currency
+      const mergedMarketValueBase = mergedQuantity * convertedPositions[0].currentPriceBase;
 
-      // Calculate total unrealized P/L from original positions
+      // Convert merged market value back to primary currency
+      const mergedMarketValue = convertToBaseCurrencyAmount(
+        mergedMarketValueBase,
+        baseCurrency,
+        primary.currency,
+        convertToBaseCurrency
+      );
+
+      // Calculate total unrealized P/L from original positions (no conversion needed)
       const totalUnrealizedPL = group.reduce((sum, pos) => sum + pos.unrealizedPL, 0);
 
-      // Calculate unrealized return using base currency values
+      // Calculate unrealized return using base currency values (for consistency)
       const mergedUnrealizedReturnPercent = totalCost > 0 ? totalUnrealizedPL / totalCost : 0;
 
       // Step 7: Merge days open using quantity weighting
@@ -245,17 +261,23 @@ export function mergePositions(
         assetName,
         quantity: mergedQuantity,
         averageCost: mergedAverageCost,
-        currentPrice: convertedPositions[0].currentPriceBase,
+        currentPrice: convertToBaseCurrencyAmount(
+          convertedPositions[0].currentPriceBase,
+          baseCurrency,
+          primary.currency,
+          convertToBaseCurrency
+        ),
         marketValue: mergedMarketValue,
         unrealizedPL: totalUnrealizedPL,
         unrealizedReturnPercent: mergedUnrealizedReturnPercent,
         daysOpenWeighted: mergedDaysOpenWeighted,
-        currency: baseCurrency,
+        currency: primary.currency, // Keep original currency
         accounts,
         positionPct: mergedPositionPct,
       });
     } else {
       // Symbol mode or single position in asset mode or different asset names - use existing logic
+      // No currency conversion needed for non-merged positions
       const totalQuantity = group.reduce((sum, pos) => sum + pos.quantity, 0);
 
       // Calculate weighted average cost: (∑ (quantity × averageCost)) / totalQuantity
@@ -283,7 +305,7 @@ export function mergePositions(
       const uniqueAccounts = [...new Set(group.map(pos => pos.accountName))].sort();
       const accounts = uniqueAccounts.join(', ');
 
-      // Calculate position percentage based on base currency value
+      // Calculate position percentage based on base currency value (for consistent sorting)
       const groupBaseCurrencyValue = positionsWithBaseCurrencyValue
         .filter(item => group.includes(item.position))
         .reduce((sum, item) => sum + item.baseCurrencyValue, 0);
@@ -299,7 +321,7 @@ export function mergePositions(
         unrealizedPL,
         unrealizedReturnPercent,
         daysOpenWeighted,
-        currency,
+        currency: group[0].currency, // Keep original currency
         accounts,
         positionPct,
       });
