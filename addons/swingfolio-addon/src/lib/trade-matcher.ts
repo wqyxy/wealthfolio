@@ -48,7 +48,7 @@ export class TradeMatcher {
 
     // Separate trading activities from dividends
     const tradingActivities = parsedActivities.filter(
-      (a) => a.activityType === 'BUY' || a.activityType === 'SELL',
+      (a) => a.activityType === 'BUY' || a.activityType === 'SELL' || a.activityType === 'ADD_HOLDING',
     );
     const dividendActivities = parsedActivities.filter((a) => a.activityType === 'DIVIDEND');
 
@@ -65,7 +65,6 @@ export class TradeMatcher {
     for (const [symbol, symbolActivities] of Object.entries(bySymbol)) {
       const symbolDividends = dividendsBySymbol[symbol] || [];
       const result = this.matchSymbolTrades(symbol, symbolActivities, symbolDividends);
-
       closedTrades.push(...result.closedTrades);
       openPositions.push(...result.openPositions);
       unmatchedBuys.push(...result.unmatchedBuys);
@@ -155,7 +154,7 @@ export class TradeMatcher {
     let averageLot: AverageLot | null = null;
 
     for (const activity of activities) {
-      if (activity.activityType === 'BUY') {
+      if (activity.activityType === 'BUY' || activity.activityType === 'ADD_HOLDING') {
         // Add to average lot
         if (!averageLot) {
           averageLot = this.createNewAverageLot(activity, symbol);
@@ -186,10 +185,8 @@ export class TradeMatcher {
         }
 
         let sellQuantityRemaining = activity.quantity;
-
         while (sellQuantityRemaining > 0 && averageLot.remainingQuantity > 0) {
           const matchedQuantity = Math.min(sellQuantityRemaining, averageLot.remainingQuantity);
-
           // Create closed trade using average price
           const closedTrade = this.createClosedTradeAverage(
             averageLot,
@@ -220,7 +217,6 @@ export class TradeMatcher {
     }
 
     // Note: Dividends are already allocated during average lot creation/updates
-
     // Create open position from remaining average lot
     if (averageLot && averageLot.remainingQuantity > 0) {
       const openPosition = this.createOpenPositionAverage(averageLot, symbol);
@@ -256,9 +252,7 @@ export class TradeMatcher {
   private updateAverageLot(averageLot: AverageLot, activity: ActivityDetails): void {
     const newTotalQuantity = averageLot.remainingQuantity + activity.quantity;
     const newTotalCostBasis =
-      averageLot.averagePrice * averageLot.remainingQuantity +
-      activity.unitPrice * activity.quantity;
-
+      averageLot.averagePrice * averageLot.remainingQuantity + activity.unitPrice * activity.quantity;
     averageLot.totalQuantity += activity.quantity;
     averageLot.remainingQuantity = newTotalQuantity;
     averageLot.totalCostBasis = newTotalCostBasis;
@@ -277,32 +271,27 @@ export class TradeMatcher {
     const closedTrades: ClosedTrade[] = [];
     const openPositions: OpenPosition[] = [];
     const unmatchedSells: ActivityDetails[] = [];
-
     const lots: Lot[] = [];
 
     for (const activity of activities) {
-      if (activity.activityType === 'BUY') {
+      if (activity.activityType === 'BUY' || activity.activityType === 'ADD_HOLDING') {
         const lot: Lot = {
           activity: activity,
           remainingQuantity: activity.quantity,
           originalQuantity: activity.quantity,
           dividends: [],
         };
-
         // Allocate dividends that occurred after this buy
         if (this.includeDividends) {
           lot.dividends = dividends.filter((div) => new Date(div.date) >= new Date(activity.date));
         }
-
         lots.push(lot);
       } else if (activity.activityType === 'SELL') {
         let sellQuantityRemaining = activity.quantity;
-
         while (sellQuantityRemaining > 0 && lots.length > 0) {
           const lotIndex = this.lotMethod === 'FIFO' ? 0 : lots.length - 1;
           const lot = lots[lotIndex];
           const matchedQuantity = Math.min(sellQuantityRemaining, lot.remainingQuantity);
-
           const closedTrade = this.createClosedTrade(
             lot.activity,
             activity,
@@ -311,15 +300,12 @@ export class TradeMatcher {
             lot.dividends,
           );
           closedTrades.push(closedTrade);
-
           sellQuantityRemaining -= matchedQuantity;
           lot.remainingQuantity -= matchedQuantity;
-
           if (lot.remainingQuantity <= 0) {
             lots.splice(lotIndex, 1);
           }
         }
-
         if (sellQuantityRemaining > 0) {
           unmatchedSells.push({
             ...activity,
@@ -330,7 +316,6 @@ export class TradeMatcher {
     }
 
     // Note: Dividends are already allocated during lot creation
-
     // Create open positions from remaining lots
     for (const lot of lots) {
       if (lot.remainingQuantity > 0) {
@@ -368,7 +353,6 @@ export class TradeMatcher {
     const buyFeeAllocation = this.includeFees
       ? (totalBuyFees * quantity) / averageLot.totalQuantity
       : 0;
-
     // Sell fees: Calculate proportionally for this sell
     const sellFeeAllocation = this.includeFees
       ? (sellActivity.fee * quantity) / sellActivity.quantity
@@ -554,7 +538,6 @@ export class TradeMatcher {
     dividends: ActivityDetails[],
   ): number {
     if (!this.includeDividends || dividends.length === 0) return 0;
-
     return dividends
       .filter((dividend) => {
         const divDate = new Date(dividend.date);
