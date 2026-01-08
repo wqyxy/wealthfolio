@@ -412,6 +412,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
             <CardHeader className="flex flex-row items-center justify-between">
               <div className="flex items-center space-x-4">
                 <CardTitle>Open Positions</CardTitle>
+                Merge
                 <div className="flex items-center space-x-2">
                   <MergeModeSelector selectedMode={mergeMode} onModeSelect={setMergeMode} />
                 </div>
