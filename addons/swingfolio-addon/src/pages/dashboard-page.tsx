@@ -61,7 +61,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
     'YTD',
   );
   const [selectedYear, setSelectedYear] = useState(new Date());
-  const [mergePositionsEnabled, setMergePositionsEnabled] = useState(false);
+  const [mergePositionsEnabled, setMergePositionsEnabled] = useState(true);
   const { data: dashboardData, isLoading, error, refetch } = useSwingDashboard(ctx, selectedPeriod);
   const { preferences } = useSwingPreferences(ctx);
 

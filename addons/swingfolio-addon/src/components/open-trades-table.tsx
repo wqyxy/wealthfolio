@@ -49,6 +49,7 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead className="text-right">Avg Cost</TableHead>
               <TableHead className="text-right">Current</TableHead>
+              <TableHead className="text-right">Market Value</TableHead>
               <TableHead className="text-right">P/L</TableHead>
               <TableHead className="text-right">Return %</TableHead>
               <TableHead className="text-center">Days</TableHead>
@@ -82,6 +83,9 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
                 </TableCell>
                 <TableCell className="text-right">
                   {position.currentPrice.toLocaleString('en-US', { style: 'currency', currency: position.currency })}
+                </TableCell>
+                <TableCell className="text-right">
+                  {position.marketValue.toLocaleString('en-US', { style: 'currency', currency: position.currency })}
                 </TableCell>
                 <TableCell className="text-right">
                   <GainAmount value={position.unrealizedPL} currency={position.currency} />
