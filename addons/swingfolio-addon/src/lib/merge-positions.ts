@@ -65,6 +65,31 @@ function convertToBaseCurrencyAmount(
 }
 
 /**
+ * Convert currency amount from base currency to target currency
+ * @param amount - The amount in base currency to convert
+ * @param baseCurrency - The base currency
+ * @param targetCurrency - The target currency to convert to
+ * @param convertToBaseCurrency - Function to convert to base currency
+ * @returns Amount in target currency
+ */
+function convertFromBaseCurrencyAmount(
+  amount: number,
+  baseCurrency: string,
+  targetCurrency: string,
+  convertToBaseCurrency?: (amount: number, fromCurrency: string) => number
+): number {
+  if (!convertToBaseCurrency || baseCurrency === targetCurrency) {
+    return amount;
+  }
+
+  // To convert from base currency to target currency, we need to:
+  // 1. Find the rate from target currency to base currency
+  // 2. Use the inverse of that rate
+  const rate = convertToBaseCurrency(1, targetCurrency);
+  return rate > 0 ? amount / rate : amount;
+}
+
+/**
  * Merge open positions by symbol and currency or by asset name
  * @param positions - Array of open positions to merge
  * @param mode - Merge mode: 'symbol' or 'asset'
@@ -204,8 +229,9 @@ export function mergePositions(
       // Calculate merged average cost in base currency
       const mergedAverageCostBase = mergedQuantity > 0 ? totalCost / mergedQuantity : 0;
 
-      // Convert merged average cost back to primary currency
-      const mergedAverageCost = convertToBaseCurrencyAmount(
+      // Convert merged average cost to primary currency using correct conversion
+      // We need to convert from base currency to primary currency
+      const mergedAverageCost = convertFromBaseCurrencyAmount(
         mergedAverageCostBase,
         baseCurrency,
         primary.currency,
@@ -213,11 +239,11 @@ export function mergePositions(
       );
 
       // Step 6: Recalculate merged market value, unrealized P/L, and return
-      // Calculate merged market value in base currency, then convert back to primary currency
+      // Calculate merged market value in base currency, then convert to primary currency
       const mergedMarketValueBase = mergedQuantity * convertedPositions[0].currentPriceBase;
 
-      // Convert merged market value back to primary currency
-      const mergedMarketValue = convertToBaseCurrencyAmount(
+      // Convert merged market value to primary currency using correct conversion
+      const mergedMarketValue = convertFromBaseCurrencyAmount(
         mergedMarketValueBase,
         baseCurrency,
         primary.currency,
@@ -261,7 +287,7 @@ export function mergePositions(
         assetName,
         quantity: mergedQuantity,
         averageCost: mergedAverageCost,
-        currentPrice: convertToBaseCurrencyAmount(
+        currentPrice: convertFromBaseCurrencyAmount(
           convertedPositions[0].currentPriceBase,
           baseCurrency,
           primary.currency,
