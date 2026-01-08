@@ -1,21 +1,24 @@
-import {
-  GainAmount,
-  GainPercent,
-  Badge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Icons,
-  EmptyPlaceholder,
-} from '@wealthfolio/ui';
-import { TickerAvatar } from './ticker-avatar';
+import { Badge, EmptyPlaceholder, GainAmount, GainPercent, Icons, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from '@wealthfolio/ui';
 import type { OpenPosition } from '../types';
+import { TickerAvatar } from './ticker-avatar';
+
+interface MergedPosition {
+  symbol: string;
+  assetName: string;
+  quantity: number;
+  averageCost: number;
+  currentPrice: number;
+  marketValue: number;
+  unrealizedPL: number;
+  unrealizedReturnPercent: number;
+  daysOpenWeighted: number;
+  currency: string;
+  accounts: string;
+  positionPct: number;
+}
 
 interface OpenTradesTableProps {
-  positions: OpenPosition[];
+  positions: OpenPosition[] | MergedPosition[];
 }
 
 export function OpenTradesTable({ positions }: OpenTradesTableProps) {
@@ -32,6 +35,9 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
     );
   }
 
+  // Check if positions are merged (by checking for positionPct property)
+  const isMergedView = positions.length > 0 && 'positionPct' in positions[0];
+
   return (
     <div className="space-y-4">
       <div className="rounded-md border">
@@ -46,11 +52,12 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
               <TableHead className="text-right">P/L</TableHead>
               <TableHead className="text-right">Return %</TableHead>
               <TableHead className="text-center">Days</TableHead>
+              {isMergedView && <TableHead className="text-right">Position %</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {positions.map((position) => (
-              <TableRow key={position.id}>
+            {positions.map((position, index) => (
+              <TableRow key={index}>
                 <TableCell>
                   <TickerAvatar symbol={position.symbol} className="h-8 w-8" />
                 </TableCell>
@@ -58,27 +65,23 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
                   <div>
                     <div className="font-medium">{position.symbol}</div>
                     {position.assetName && (
-                      <div
-                        className="text-muted-foreground max-w-[120px] truncate text-xs"
-                        title={position.assetName}
-                      >
+                      <div className="text-muted-foreground max-w-[120px] truncate text-xs" title={position.assetName}>
                         {position.assetName}
                       </div>
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-right">{position.quantity.toLocaleString()}</TableCell>
                 <TableCell className="text-right">
-                  {position.averageCost.toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: position.currency,
+                  {position.quantity.toLocaleString(undefined, {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 4
                   })}
                 </TableCell>
                 <TableCell className="text-right">
-                  {position.currentPrice.toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: position.currency,
-                  })}
+                  {position.averageCost.toLocaleString('en-US', { style: 'currency', currency: position.currency })}
+                </TableCell>
+                <TableCell className="text-right">
+                  {position.currentPrice.toLocaleString('en-US', { style: 'currency', currency: position.currency })}
                 </TableCell>
                 <TableCell className="text-right">
                   <GainAmount value={position.unrealizedPL} currency={position.currency} />
@@ -88,9 +91,16 @@ export function OpenTradesTable({ positions }: OpenTradesTableProps) {
                 </TableCell>
                 <TableCell className="text-center">
                   <Badge variant="outline" className="text-xs">
-                    {position.daysOpen}
+                    {'daysOpen' in position ? position.daysOpen : position.daysOpenWeighted.toFixed(1)}
                   </Badge>
                 </TableCell>
+                {isMergedView && (
+                  <TableCell className="text-right">
+                    <Badge variant="outline" className="text-xs">
+                      {(position as MergedPosition).positionPct.toFixed(2)}%
+                    </Badge>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

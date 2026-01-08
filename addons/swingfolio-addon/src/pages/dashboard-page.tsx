@@ -13,6 +13,7 @@ import {
   PageContent,
   PageHeader,
   Skeleton,
+  Switch,
 } from '@wealthfolio/ui';
 import { useState } from 'react';
 import { AdaptiveCalendarView } from '../components/adaptive-calendar-view';
@@ -21,8 +22,6 @@ import { EquityCurveChart } from '../components/equity-curve-chart';
 import { OpenTradesTable } from '../components/open-trades-table';
 import { useSwingDashboard } from '../hooks/use-swing-dashboard';
 import { useSwingPreferences } from '../hooks/use-swing-preferences';
-
-
 import type { OpenPosition } from '../types';
 
 const periods = [
@@ -50,13 +49,7 @@ const PeriodSelector: React.FC<{
   selectedPeriod: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
   onPeriodSelect: (period: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL') => void;
 }> = ({ selectedPeriod, onPeriodSelect }) => (
-  <AnimatedToggleGroup
-    items={periods}
-    value={selectedPeriod}
-    onValueChange={onPeriodSelect}
-    variant="secondary"
-    size="sm"
-  />
+  <AnimatedToggleGroup items={periods} value={selectedPeriod} onValueChange={onPeriodSelect} variant="secondary" size="sm" />
 );
 
 interface DashboardPageProps {
@@ -68,19 +61,72 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
     'YTD',
   );
   const [selectedYear, setSelectedYear] = useState(new Date());
-
+  const [mergePositionsEnabled, setMergePositionsEnabled] = useState(false);
   const { data: dashboardData, isLoading, error, refetch } = useSwingDashboard(ctx, selectedPeriod);
   const { preferences } = useSwingPreferences(ctx);
 
   // Export to CSV function
-
-
   const exportToCSV = (openPositions: OpenPosition[]) => {
     // 直接处理空数据（不提示，按钮已 disabled）
     if (openPositions.length === 0) {
       return;
     }
 
+    // Check if we should export merged positions
+    const positionsToExport = mergePositionsEnabled ? mergePositions(openPositions) : openPositions;
+
+    // Headers for merged positions
+    if (mergePositionsEnabled) {
+      const headers = [
+        'Symbol',
+        'Asset Name',
+        'Quantity',
+        'Average Cost',
+        'Current Price',
+        'Market Value',
+        'Unrealized P/L',
+        'Unrealized Return %',
+        'Days Open (weighted avg)',
+        'Currency',
+        'Accounts',
+        'Position %',
+      ];
+
+      const rows = positionsToExport.map(pos => [
+        pos.symbol,
+        pos.assetName || '',
+        pos.quantity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 }),
+        pos.averageCost.toFixed(4),
+        pos.currentPrice.toFixed(2),
+        pos.marketValue.toFixed(2),
+        pos.unrealizedPL.toFixed(2),
+        (pos.unrealizedReturnPercent * 100).toFixed(2) + '%',
+        pos.daysOpenWeighted.toFixed(1),
+        pos.currency,
+        pos.accounts,
+        pos.positionPct.toFixed(2) + '%',
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `merged-open-positions-${new Date().toISOString().slice(0,10)}.csv`;
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      console.log('CSV exported:', positionsToExport.length, 'merged positions');
+      return;
+    }
+
+    // Original headers for unmerged positions
     const headers = [
       'Symbol',
       'Asset Name',
@@ -128,15 +174,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
     console.log('CSV exported:', openPositions.length, 'positions');
   };
 
-
   // Export to CSV function END
-
-
-
-
-
-
-
 
   const handleNavigateToActivities = () => {
     ctx.api.navigation.navigate('/addons/swingfolio/activities');
@@ -144,6 +182,116 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
 
   const handleNavigateToSettings = () => {
     ctx.api.navigation.navigate('/addons/swingfolio/settings');
+  };
+
+  // Hardcoded exchange rates for USD conversion (as of 2026-01-07)
+  const HARDCODED_EXCHANGE_RATES: Record<string, number> = {
+    'USD': 1,
+    'HKD': 0.1284,
+    'CNY': 0.1430,
+  };
+
+  // Convert currency amount to USD equivalent using exchange rates
+  const convertToUSD = (amount: number, currency: string): number => {
+    // Fallback to hardcoded rates
+    const rate = HARDCODED_EXCHANGE_RATES[currency] || 1;
+    return amount * rate;
+  };
+
+  // Merge open positions by symbol and currency
+  const mergePositions = (positions: OpenPosition[]): any[] => {
+    // Group positions by symbol and currency
+    const groupedPositions = new Map<string, OpenPosition[]>();
+
+    positions.forEach(position => {
+      const key = `${position.symbol}|${position.currency}`;
+      if (!groupedPositions.has(key)) {
+        groupedPositions.set(key, []);
+      }
+      groupedPositions.get(key)?.push(position);
+    });
+
+    // Convert to merged positions
+    const mergedPositions: any[] = [];
+
+    // Calculate total USD value for position percentage calculation
+    let totalUsdValue = 0;
+    const positionsWithUsdValue: Array<{ position: OpenPosition; usdValue: number }> = [];
+
+    groupedPositions.forEach(group => {
+      // Calculate USD value for each position in the group
+      group.forEach(position => {
+        const usdValue = convertToUSD(position.marketValue, position.currency);
+        positionsWithUsdValue.push({ position, usdValue });
+        totalUsdValue += usdValue;
+      });
+    });
+
+    // Process each group
+    groupedPositions.forEach((group, key) => {
+      const [symbol, currency] = key.split('|');
+
+      // Take asset name from first position (should be the same for all in group)
+      const assetName = group[0].assetName || '';
+
+      // Calculate totals
+      const totalQuantity = group.reduce((sum, pos) => sum + pos.quantity, 0);
+
+      // Calculate weighted average cost: (∑ (quantity × averageCost)) / totalQuantity
+      const weightedCostSum = group.reduce((sum, pos) => sum + (pos.quantity * pos.averageCost), 0);
+      const averageCost = totalQuantity > 0 ? weightedCostSum / totalQuantity : 0;
+
+      // Take current price from first position (should be the same for all in group)
+      const currentPrice = group[0].currentPrice;
+
+      // Calculate total market value
+      const marketValue = totalQuantity * currentPrice;
+
+      // Calculate total unrealized P/L
+      const unrealizedPL = group.reduce((sum, pos) => sum + pos.unrealizedPL, 0);
+
+      // Calculate unrealized return: total unrealized P/L / (total quantity × weighted average cost)
+      const costBasis = totalQuantity * averageCost;
+      const unrealizedReturnPercent = costBasis > 0 ? unrealizedPL / costBasis : 0;
+
+      // Calculate weighted average days open: (∑ (quantity × daysOpen)) / totalQuantity
+      const weightedDaysSum = group.reduce((sum, pos) => sum + (pos.quantity * pos.daysOpen), 0);
+      const daysOpenWeighted = totalQuantity > 0 ? weightedDaysSum / totalQuantity : 0;
+
+      // Collect unique accounts and sort them alphabetically
+      const uniqueAccounts = [...new Set(group.map(pos => pos.accountName))].sort();
+      const accounts = uniqueAccounts.join(', ');
+
+      // Calculate position percentage based on USD value
+      const groupUsdValue = positionsWithUsdValue
+        .filter(item => group.includes(item.position))
+        .reduce((sum, item) => sum + item.usdValue, 0);
+
+      const positionPct = totalUsdValue > 0 ? (groupUsdValue / totalUsdValue) * 100 : 0;
+
+      mergedPositions.push({
+        symbol,
+        assetName,
+        quantity: totalQuantity,
+        averageCost,
+        currentPrice,
+        marketValue,
+        unrealizedPL,
+        unrealizedReturnPercent,
+        daysOpenWeighted,
+        currency,
+        accounts,
+        positionPct,
+      });
+    });
+
+    // Sort by position percentage descending, then symbol ascending
+    return mergedPositions.sort((a, b) => {
+      if (b.positionPct !== a.positionPct) {
+        return b.positionPct - a.positionPct;
+      }
+      return a.symbol.localeCompare(b.symbol);
+    });
   };
 
   if (isLoading) {
@@ -171,9 +319,8 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
   }
 
   const { metrics, openPositions = [], periodPL = [], distribution, calendar = [] } = dashboardData;
+  const hasSelectedActivities = preferences.selectedActivityIds.length > 0 || preferences.includeSwingTag;
 
-  const hasSelectedActivities =
-    preferences.selectedActivityIds.length > 0 || preferences.includeSwingTag;
   if (!hasSelectedActivities) {
     return (
       <Page>
@@ -217,30 +364,14 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
   const headerActions = (
     <>
       <PeriodSelector selectedPeriod={selectedPeriod} onPeriodSelect={setSelectedPeriod} />
-      <Button
-        variant="outline"
-        className="hidden rounded-full sm:inline-flex"
-        onClick={handleNavigateToActivities}
-      >
+      <Button variant="outline" className="hidden rounded-full sm:inline-flex" onClick={handleNavigateToActivities}>
         <Icons.ListChecks className="mr-2 h-4 w-4" />
         <span>Select Activities</span>
       </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={handleNavigateToActivities}
-        className="sm:hidden"
-        aria-label="Select activities"
-      >
+      <Button variant="outline" size="icon" onClick={handleNavigateToActivities} className="sm:hidden" aria-label="Select activities">
         <Icons.ListChecks className="h-4 w-4" />
       </Button>
-
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={handleNavigateToSettings}
-        className="rounded-full"
-      >
+      <Button variant="outline" size="icon" onClick={handleNavigateToSettings} className="rounded-full">
         <Icons.Settings className="size-4" />
       </Button>
     </>
@@ -249,23 +380,15 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
   return (
     <Page>
       <PageHeader heading="Trading Dashboard" actions={headerActions} />
-
       <PageContent>
         <div className="space-y-4 sm:space-y-6">
           {/* KPI Cards */}
           <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-3">
             {/* Widget 1: Overall P/L Summary - Clean Design */}
-
-            <Card
-              className={`${metrics.totalPL >= 0 ? 'border-success/10 bg-success/10' : 'border-destructive/10 bg-destructive/10'}`}
-            >
+            <Card className={`${metrics.totalPL >= 0 ? 'border-success/10 bg-success/10' : 'border-destructive/10 bg-destructive/10'}`}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pt-4 pb-3">
                 <CardTitle className="text-sm font-medium">P/L</CardTitle>
-                <GainAmount
-                  className="text-xl font-bold sm:text-2xl"
-                  value={metrics.totalPL}
-                  currency={metrics.currency}
-                />
+                <GainAmount className="text-xl font-bold sm:text-2xl" value={metrics.totalPL} currency={metrics.currency} />
               </CardHeader>
               <CardContent className="space-y-3">
                 {/* Details Below - Labels Left, Amounts Right */}
@@ -275,12 +398,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                       Realized ({metrics.totalTrades} trades)
                     </span>
                     <div className="flex items-center gap-2">
-                      <GainAmount
-                        value={metrics.totalRealizedPL}
-                        currency={metrics.currency}
-                        className="font-medium"
-                        displayDecimal={false}
-                      />
+                      <GainAmount value={metrics.totalRealizedPL} currency={metrics.currency} className="font-medium" displayDecimal={false} />
                     </div>
                   </div>
                   <div className="flex items-center justify-between text-sm">
@@ -288,12 +406,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                       Unrealized ({metrics.openPositions} open)
                     </span>
                     <div className="flex items-center gap-2">
-                      <GainAmount
-                        value={metrics.totalUnrealizedPL}
-                        currency={metrics.currency}
-                        className="font-medium"
-                        displayDecimal={false}
-                      />
+                      <GainAmount value={metrics.totalUnrealizedPL} currency={metrics.currency} className="font-medium" displayDecimal={false} />
                     </div>
                   </div>
                 </div>
@@ -310,29 +423,15 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground text-xs">Win Rate</span>
-                    <GainPercent
-                      value={metrics.winRate}
-                      className="text-sm font-semibold"
-                      showSign={false}
-                    />
+                    <GainPercent value={metrics.winRate} className="text-sm font-semibold" showSign={false} />
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground text-xs">Avg Win</span>
-                    <GainAmount
-                      value={metrics.averageWin}
-                      currency={metrics.currency}
-                      className="text-sm font-semibold"
-                      displayDecimal={false}
-                    />
+                    <GainAmount value={metrics.averageWin} currency={metrics.currency} className="text-sm font-semibold" displayDecimal={false} />
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground text-xs">Avg Loss</span>
-                    <GainAmount
-                      value={-metrics.averageLoss}
-                      currency={metrics.currency}
-                      className="text-sm font-semibold"
-                      displayDecimal={false}
-                    />
+                    <GainAmount value={-metrics.averageLoss} currency={metrics.currency} className="text-sm font-semibold" displayDecimal={false} />
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground text-xs">Total Trades</span>
@@ -352,19 +451,12 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground text-xs">Expectancy</span>
-                    <GainAmount
-                      value={metrics.expectancy}
-                      currency={metrics.currency}
-                      className="text-sm font-semibold"
-                      displayDecimal={false}
-                    />
+                    <GainAmount value={metrics.expectancy} currency={metrics.currency} className="text-sm font-semibold" displayDecimal={false} />
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground text-xs">Profit Factor</span>
                     <span className="text-sm font-semibold">
-                      {metrics.profitFactor === Number.POSITIVE_INFINITY
-                        ? '∞'
-                        : metrics.profitFactor.toFixed(2)}
+                      {metrics.profitFactor === Number.POSITIVE_INFINITY ? '∞' : metrics.profitFactor.toFixed(2)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -402,15 +494,12 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
                   data={chartEquityData}
                   currency={metrics.currency}
                   periodType={
-                    selectedPeriod === '1M'
-                      ? 'daily'
-                      : selectedPeriod === '3M'
-                        ? 'weekly'
-                        : 'monthly'
+                    selectedPeriod === '1M' ? 'daily' : selectedPeriod === '3M' ? 'weekly' : 'monthly'
                   }
                 />
               </CardContent>
             </Card>
+
             <Card className="flex flex-col pt-0">
               <CardContent className="flex min-h-0 flex-1 flex-col py-4 sm:py-6">
                 <AdaptiveCalendarView
@@ -433,7 +522,13 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
               </span>
             </CardHeader> */}
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Open Positions</CardTitle>
+              <div className="flex items-center space-x-4">
+                <CardTitle>Open Positions</CardTitle>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-muted-foreground">Merge</span>
+                  <Switch checked={mergePositionsEnabled} onCheckedChange={setMergePositionsEnabled} />
+                </div>
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -445,7 +540,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
               </Button>
             </CardHeader>
             <CardContent className="px-2 sm:px-6">
-              <OpenTradesTable positions={openPositions} />
+              <OpenTradesTable positions={mergePositionsEnabled ? mergePositions(openPositions) : openPositions} />
             </CardContent>
           </Card>
 
@@ -471,7 +566,6 @@ function DashboardSkeleton() {
           </>
         }
       />
-
       <PageContent>
         <div className="space-y-4 sm:space-y-6">
           <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-3">
@@ -488,7 +582,6 @@ function DashboardSkeleton() {
               </Card>
             ))}
           </div>
-
           <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader>
@@ -498,7 +591,6 @@ function DashboardSkeleton() {
                 <Skeleton className="h-[250px] w-full sm:h-[300px]" />
               </CardContent>
             </Card>
-
             <Card>
               <CardHeader>
                 <Skeleton className="h-5 w-[150px] sm:h-6 sm:w-[180px]" />
