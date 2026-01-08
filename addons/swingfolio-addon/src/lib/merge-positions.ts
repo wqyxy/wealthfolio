@@ -29,75 +29,39 @@ const HARDCODED_EXCHANGE_RATES: Record<string, number> = {
 };
 
 /**
- * Convert currency amount to USD equivalent using exchange rates
- * @param amount - The amount to convert
- * @param currency - The currency of the amount
- * @param exchangeRates - Exchange rates from Wealthfolio
- * @returns USD equivalent amount
+ * Check if all positions in a group have the same asset name
+ * @param positions - Array of positions to check
+ * @returns true if all positions have the same asset name
  */
-function convertToUSD(
-  amount: number,
-  currency: string,
-  exchangeRates: any[] | undefined
-): number {
-  // Try to use Wealthfolio's exchange rates first
-  if (exchangeRates && exchangeRates.length > 0) {
-    // Find direct rate from currency to USD
-    const directRate = exchangeRates.find(
-      rate => rate.fromCurrency === currency && rate.toCurrency === 'USD'
-    );
-    if (directRate) {
-      return amount * directRate.rate;
-    }
+function hasSameAssetName(positions: OpenPosition[]): boolean {
+  if (positions.length <= 1) return true;
 
-    // Find reverse rate from USD to currency
-    const reverseRate = exchangeRates.find(
-      rate => rate.fromCurrency === 'USD' && rate.toCurrency === currency
-    );
-    if (reverseRate && reverseRate.rate > 0) {
-      return amount / reverseRate.rate;
-    }
-  }
-
-  // Fallback to hardcoded rates
-  const rate = HARDCODED_EXCHANGE_RATES[currency] || 1;
-  return amount * rate;
+  const firstAssetName = positions[0].assetName || positions[0].symbol;
+  return positions.every(pos => {
+    const assetName = pos.assetName || pos.symbol;
+    return assetName === firstAssetName;
+  });
 }
 
 /**
- * Convert amount from one currency to another using base currency as intermediate
+ * Convert currency amount to base currency equivalent using the provided conversion function
  * @param amount - The amount to convert
- * @param fromCurrency - The currency to convert from
- * @param toCurrency - The currency to convert to
+ * @param currency - The currency of the amount
  * @param baseCurrency - The base currency for conversion
  * @param convertToBaseCurrency - Function to convert to base currency
- * @returns Converted amount
+ * @returns Base currency equivalent amount
  */
-function convertCurrency(
+function convertToBaseCurrencyAmount(
   amount: number,
-  fromCurrency: string,
-  toCurrency: string,
+  currency: string,
   baseCurrency: string,
   convertToBaseCurrency?: (amount: number, fromCurrency: string) => number
 ): number {
-  if (fromCurrency === toCurrency) {
+  if (!convertToBaseCurrency || currency === baseCurrency) {
     return amount;
   }
 
-  // If we have a conversion function, use it
-  if (convertToBaseCurrency) {
-    // Convert from fromCurrency to base currency
-    const amountInBase = convertToBaseCurrency(amount, fromCurrency);
-    // Convert from base currency to toCurrency
-    // For this, we need to convert 1 unit of toCurrency to base currency, then divide
-    const oneUnitInBase = convertToBaseCurrency(1, toCurrency);
-    return oneUnitInBase > 0 ? amountInBase / oneUnitInBase : amountInBase;
-  }
-
-  // Fallback to USD conversion
-  const usdAmount = convertToUSD(amount, fromCurrency, undefined);
-  const rate = HARDCODED_EXCHANGE_RATES[toCurrency] || 1;
-  return usdAmount / rate;
+  return convertToBaseCurrency(amount, currency);
 }
 
 /**
@@ -137,15 +101,21 @@ export function mergePositions(
   // Convert to merged positions
   const mergedPositions: MergedPosition[] = [];
 
-  // Calculate total USD value for position percentage calculation
-  let totalUsdValue = 0;
-  const positionsWithUsdValue: Array<{ position: OpenPosition; usdValue: number }> = [];
+  // Calculate total base currency value for position percentage calculation
+  let totalBaseCurrencyValue = 0;
+  const positionsWithBaseCurrencyValue: Array<{ position: OpenPosition; baseCurrencyValue: number }> = [];
+
   groupedPositions.forEach(group => {
-    // Calculate USD value for each position in the group
+    // Calculate base currency value for each position in the group
     group.forEach(position => {
-      const usdValue = convertToUSD(position.marketValue, position.currency, exchangeRates);
-      positionsWithUsdValue.push({ position, usdValue });
-      totalUsdValue += usdValue;
+      const baseCurrencyValue = convertToBaseCurrencyAmount(
+        position.marketValue,
+        position.currency,
+        baseCurrency,
+        convertToBaseCurrency
+      );
+      positionsWithBaseCurrencyValue.push({ position, baseCurrencyValue });
+      totalBaseCurrencyValue += baseCurrencyValue;
     });
   });
 
@@ -155,6 +125,7 @@ export function mergePositions(
     let primaryPosition: OpenPosition;
     let symbol: string;
     let currency: string;
+    let assetName: string;
 
     if (mode === 'asset') {
       // Find primary position (largest market value in base currency)
@@ -162,9 +133,12 @@ export function mergePositions(
       let primaryIndex = 0;
 
       group.forEach((position, index) => {
-        const marketValueBase = convertToBaseCurrency
-          ? convertToBaseCurrency(position.marketValue, position.currency)
-          : convertToUSD(position.marketValue, position.currency, exchangeRates);
+        const marketValueBase = convertToBaseCurrencyAmount(
+          position.marketValue,
+          position.currency,
+          baseCurrency,
+          convertToBaseCurrency
+        );
 
         if (marketValueBase > maxMarketValueBase) {
           maxMarketValueBase = marketValueBase;
@@ -178,93 +152,110 @@ export function mergePositions(
       primaryPosition = primary;
       symbol = primary.symbol;
       currency = primary.currency;
+      assetName = primary.assetName || '';
     } else {
       // Symbol mode - use existing logic
       const parts = key.split('|');
       symbol = parts[0];
       currency = parts[1];
       primaryPosition = group[0];
+      assetName = primaryPosition.assetName || '';
     }
 
-    const assetName = primaryPosition.assetName || '';
-
-    if (mode === 'asset' && group.length > 1) {
-      // Asset mode with multiple positions - merge them
+    if (mode === 'asset' && group.length > 1 && hasSameAssetName(group)) {
+      // Asset mode with multiple positions and same asset name - execute 8-step process
       const primary = group[0];
 
-      // Calculate total quantity using the formula: primary quantity + (sum of secondary market values in primary currency / primary price)
-      let totalQuantity = primary.quantity;
-      let totalCostBasis = primary.quantity * primary.averageCost;
+      // Step 1: Unified pricing currency conversion
+      // Convert all amounts to base currency
+      const convertedPositions = group.map(pos => ({
+        ...pos,
+        marketValueBase: convertToBaseCurrencyAmount(pos.marketValue, pos.currency, baseCurrency, convertToBaseCurrency),
+        averageCostBase: convertToBaseCurrencyAmount(pos.averageCost, pos.currency, baseCurrency, convertToBaseCurrency),
+        currentPriceBase: convertToBaseCurrencyAmount(pos.currentPrice, pos.currency, baseCurrency, convertToBaseCurrency),
+      }));
 
-      // Process secondary positions
-      for (let i = 1; i < group.length; i++) {
-        const secondary = group[i];
-        // Convert secondary market value to primary currency
-        const secondaryMarketValueInPrimaryCurrency = convertToBaseCurrency
-          ? convertToBaseCurrency(secondary.marketValue, secondary.currency)
-          : convertToUSD(secondary.marketValue, secondary.currency, exchangeRates);
+      // Step 2: Determine primary and secondary positions
+      // Primary position is already determined (largest market value in base currency)
+      const secondaryPositions = convertedPositions.slice(1);
 
-        // Convert to primary currency if needed
-        const secondaryMarketValuePrimary = convertToBaseCurrency
-          ? convertCurrency(secondaryMarketValueInPrimaryCurrency, currency, primary.currency, baseCurrency, convertToBaseCurrency)
-          : secondaryMarketValueInPrimaryCurrency;
+      // Step 3: Calculate equivalent quantity for secondary positions
+      let totalEquivalentQuantity = primary.quantity;
 
-        // Add equivalent quantity based on primary price
-        const equivalentQuantity = primary.currentPrice > 0
-          ? secondaryMarketValuePrimary / primary.currentPrice
+      secondaryPositions.forEach(secondary => {
+        // Calculate equivalent quantity: secondary market value (base currency) / primary current price (base currency)
+        const equivalentQuantity = convertedPositions[0].currentPriceBase > 0
+          ? secondary.marketValueBase / convertedPositions[0].currentPriceBase
           : 0;
+        totalEquivalentQuantity += equivalentQuantity;
+      });
 
-        totalQuantity += equivalentQuantity;
+      // Step 4: Merge quantities
+      const mergedQuantity = totalEquivalentQuantity;
 
-        // Add cost basis of secondary position
-        totalCostBasis += secondary.quantity * secondary.averageCost;
-      }
+      // Step 5: Merge costs and back-calculate average cost
+      // Calculate total cost for each position using converted average cost
+      let totalCost = 0;
 
-      // Calculate weighted average cost
-      const averageCost = totalQuantity > 0 ? totalCostBasis / totalQuantity : 0;
+      convertedPositions.forEach(pos => {
+        totalCost += pos.quantity * pos.averageCostBase;
+      });
 
-      // Use primary position's current price
-      const currentPrice = primary.currentPrice;
-      const marketValue = totalQuantity * currentPrice;
+      // Calculate merged average cost
+      const mergedAverageCost = mergedQuantity > 0 ? totalCost / mergedQuantity : 0;
 
-      // Calculate total unrealized P/L
-      const unrealizedPL = group.reduce((sum, pos) => sum + pos.unrealizedPL, 0);
+      // Step 6: Recalculate merged market value, unrealized P/L, and return
+      // Recalculate market value using merged quantity and primary current price (base currency)
+      const mergedMarketValue = mergedQuantity * convertedPositions[0].currentPriceBase;
 
-      // Calculate unrealized return
-      const costBasis = totalQuantity * averageCost;
-      const unrealizedReturnPercent = costBasis > 0 ? unrealizedPL / costBasis : 0;
+      // Calculate total unrealized P/L from original positions
+      const totalUnrealizedPL = group.reduce((sum, pos) => sum + pos.unrealizedPL, 0);
 
-      // Calculate weighted average days open using quantity weighting
-      const weightedDaysSum = group.reduce((sum, pos) => sum + (pos.quantity * pos.daysOpen), 0);
-      const totalOriginalQuantity = group.reduce((sum, pos) => sum + pos.quantity, 0);
-      const daysOpenWeighted = totalOriginalQuantity > 0 ? weightedDaysSum / totalOriginalQuantity : 0;
+      // Calculate unrealized return using base currency values
+      const mergedUnrealizedReturnPercent = totalCost > 0 ? totalUnrealizedPL / totalCost : 0;
+
+      // Step 7: Merge days open using quantity weighting
+      // Use equivalent quantities for weighting
+      let weightedDaysSum = primary.quantity * primary.daysOpen;
+      let totalWeight = primary.quantity;
+
+      secondaryPositions.forEach((secondary, index) => {
+        const equivalentQuantity = convertedPositions[0].currentPriceBase > 0
+          ? secondary.marketValueBase / convertedPositions[0].currentPriceBase
+          : 0;
+        weightedDaysSum += equivalentQuantity * group[index + 1].daysOpen;
+        totalWeight += equivalentQuantity;
+      });
+
+      const mergedDaysOpenWeighted = totalWeight > 0 ? weightedDaysSum / totalWeight : 0;
+
+      // Step 8: Recalculate position percentage
+      // Calculate group base currency value
+      const groupBaseCurrencyValue = positionsWithBaseCurrencyValue
+        .filter(item => group.includes(item.position))
+        .reduce((sum, item) => sum + item.baseCurrencyValue, 0);
+      const mergedPositionPct = totalBaseCurrencyValue > 0 ? (groupBaseCurrencyValue / totalBaseCurrencyValue) * 100 : 0;
 
       // Collect unique accounts and sort them alphabetically
       const uniqueAccounts = [...new Set(group.map(pos => pos.accountName))].sort();
       const accounts = uniqueAccounts.join(', ');
 
-      // Calculate position percentage based on USD value
-      const groupUsdValue = positionsWithUsdValue
-        .filter(item => group.includes(item.position))
-        .reduce((sum, item) => sum + item.usdValue, 0);
-      const positionPct = totalUsdValue > 0 ? (groupUsdValue / totalUsdValue) * 100 : 0;
-
       mergedPositions.push({
         symbol,
         assetName,
-        quantity: totalQuantity,
-        averageCost,
-        currentPrice,
-        marketValue,
-        unrealizedPL,
-        unrealizedReturnPercent,
-        daysOpenWeighted,
-        currency,
+        quantity: mergedQuantity,
+        averageCost: mergedAverageCost,
+        currentPrice: convertedPositions[0].currentPriceBase,
+        marketValue: mergedMarketValue,
+        unrealizedPL: totalUnrealizedPL,
+        unrealizedReturnPercent: mergedUnrealizedReturnPercent,
+        daysOpenWeighted: mergedDaysOpenWeighted,
+        currency: baseCurrency,
         accounts,
-        positionPct,
+        positionPct: mergedPositionPct,
       });
     } else {
-      // Symbol mode or single position in asset mode - use existing logic
+      // Symbol mode or single position in asset mode or different asset names - use existing logic
       const totalQuantity = group.reduce((sum, pos) => sum + pos.quantity, 0);
 
       // Calculate weighted average cost: (∑ (quantity × averageCost)) / totalQuantity
@@ -292,11 +283,11 @@ export function mergePositions(
       const uniqueAccounts = [...new Set(group.map(pos => pos.accountName))].sort();
       const accounts = uniqueAccounts.join(', ');
 
-      // Calculate position percentage based on USD value
-      const groupUsdValue = positionsWithUsdValue
+      // Calculate position percentage based on base currency value
+      const groupBaseCurrencyValue = positionsWithBaseCurrencyValue
         .filter(item => group.includes(item.position))
-        .reduce((sum, item) => sum + item.usdValue, 0);
-      const positionPct = totalUsdValue > 0 ? (groupUsdValue / totalUsdValue) * 100 : 0;
+        .reduce((sum, item) => sum + item.baseCurrencyValue, 0);
+      const positionPct = totalBaseCurrencyValue > 0 ? (groupBaseCurrencyValue / totalBaseCurrencyValue) * 100 : 0;
 
       mergedPositions.push({
         symbol,
@@ -323,3 +314,4 @@ export function mergePositions(
     return a.symbol.localeCompare(b.symbol);
   });
 }
+  // Sort by position percentage descending, then symbol ascending
