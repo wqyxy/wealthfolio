@@ -20,6 +20,12 @@ const periods = [
   { value: 'ALL' as const, label: 'ALL' },
 ];
 
+const mergeModes = [
+  { value: 'off' as const, label: 'Off' },
+  { value: 'symbol' as const, label: 'Symbol' },
+  { value: 'asset' as const, label: 'Asset' },
+];
+
 // Chart period type is now automatically determined based on selected period
 const getChartPeriodDisplay = (period: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL') => {
   switch (period) {
@@ -37,6 +43,13 @@ const PeriodSelector: React.FC<{
   onPeriodSelect: (period: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL') => void;
 }> = ({ selectedPeriod, onPeriodSelect }) => (
   <AnimatedToggleGroup items={periods} value={selectedPeriod} onValueChange={onPeriodSelect} variant="secondary" size="sm" />
+);
+
+const MergeModeSelector: React.FC<{
+  selectedMode: 'off' | 'symbol' | 'asset';
+  onModeSelect: (mode: 'off' | 'symbol' | 'asset') => void;
+}> = ({ selectedMode, onModeSelect }) => (
+  <AnimatedToggleGroup items={mergeModes} value={selectedMode} onValueChange={onModeSelect} variant="secondary" size="sm" />
 );
 
 interface DashboardPageProps {
@@ -400,16 +413,7 @@ export default function DashboardPage({ ctx }: DashboardPageProps) {
               <div className="flex items-center space-x-4">
                 <CardTitle>Open Positions</CardTitle>
                 <div className="flex items-center space-x-2">
-                  <span className="text-sm text-muted-foreground">Merge</span>
-                  <select
-                    value={mergeMode}
-                    onChange={(e) => setMergeMode(e.target.value as 'off' | 'symbol' | 'asset')}
-                    className="rounded border p-1 text-sm"
-                  >
-                    <option value="off">Off</option>
-                    <option value="symbol">By Symbol</option>
-                    <option value="asset">By Asset Name</option>
-                  </select>
+                  <MergeModeSelector selectedMode={mergeMode} onModeSelect={setMergeMode} />
                 </div>
               </div>
               <Button
@@ -496,4 +500,4 @@ function DashboardSkeleton() {
       </PageContent>
     </Page>
   );
-}  );
+}
