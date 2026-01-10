@@ -16,88 +16,75 @@
 
 ### 1. 创建External API模块结构
 
-在 `packages/server/src/external-api/` 目录下创建：
-- `app.ts` - Hono应用配置
-- `index.ts` - 启动入口
+在 `src-tauri/src/external_api.rs` 中实现Rust版本的External API。
 
 ### 2. 技术选型
-- **框架**: Hono (轻量级Web框架)
-- **语言**: TypeScript
+- **框架**: Axum (轻量级Web框架)
+- **语言**: Rust
 - **监听地址**: 127.0.0.1:3333
 - **API路径**: `/api/health`
 
 ### 3. 核心功能实现
 
-#### External API应用 (`packages/server/src/external-api/app.ts`)
-```typescript
-import { Hono } from 'hono'
-import { logger } from 'hono/logger'
+#### External API应用 (`src-tauri/src/external_api.rs`)
+```rust
+use axum::{
+    routing::get,
+    Router,
+    Json,
+};
+use serde_json::json;
+use std::net::SocketAddr;
 
-export interface ExternalApiConfig {
-  port: number
-  host: string
+/// Configuration for the external API server
+#[derive(Clone)]
+pub struct ExternalApiConfig {
+    pub port: u16,
+    pub host: String,
 }
 
-export function createExternalApiApp(config: ExternalApiConfig) {
-  const app = new Hono()
-
-  // 添加日志中间件
-  app.use(logger())
-
-  // 健康检查端点
-  app.get('/api/health', (c) => {
-    return c.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      port: config.port
-    })
-  })
-
-  // 根端点
-  app.get('/', (c) => {
-    return c.json({
-      message: 'Wealthfolio External API',
-      status: 'running',
-      port: config.port
-    })
-  })
-
-  return app
-}
-```
-
-#### 启动入口 (`packages/server/src/external-api/index.ts`)
-```typescript
-import { serve } from '@hono/node-server'
-import { createExternalApiApp, type ExternalApiConfig } from './app'
-
-export interface ExternalApiServer {
-  close: () => Promise<void>
+/// Creates the external API router with health and root endpoints
+pub fn create_external_api_router(config: ExternalApiConfig) -> Router {
+    Router::new()
+        .route("/api/health", get(health_handler))
+        .route("/", get(root_handler))
+        .with_state(config)
 }
 
-export async function startExternalApi(config: ExternalApiConfig): Promise<ExternalApiServer> {
-  const app = createExternalApiApp(config)
+/// Health check handler
+async fn health_handler(
+    axum::extract::State(config): axum::extract::State<ExternalApiConfig>,
+) -> Json<serde_json::Value> {
+    Json(json!({
+        "status": "ok",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "port": config.port
+    }))
+}
 
-  // 启动服务器
-  const server = serve({
-    fetch: app.fetch,
-    port: config.port,
-    hostname: config.host,
-  })
+/// Root handler
+async fn root_handler(
+    axum::extract::State(config): axum::extract::State<ExternalApiConfig>,
+) -> Json<serde_json::Value> {
+    Json(json!({
+        "message": "Wealthfolio External API",
+        "status": "running",
+        "port": config.port
+    }))
+}
 
-  console.log(`🚀 External API Server ready at http://${config.host}:${config.port}`)
-  console.log(`📊 Health endpoint: http://${config.host}:${config.port}/api/health`)
+/// Starts the external API server
+pub async fn start_external_api(config: ExternalApiConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let app = create_external_api_router(config.clone());
 
-  return {
-    close: async () => {
-      return new Promise((resolve) => {
-        server.close(() => {
-          console.log('External API server closed')
-          resolve()
-        })
-      })
-    }
-  }
+    let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
+    println!("🚀 External API Server ready at http://{}:{}", config.host, config.port);
+    println!("📊 Health endpoint: http://{}:{}/api/health", config.host, config.port);
+
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }
 ```
 
@@ -110,45 +97,15 @@ export async function startExternalApi(config: ExternalApiConfig): Promise<Exter
 // Start External API server if addon dev mode is enabled
 if std::env::var("VITE_ENABLE_ADDON_DEV_MODE").is_ok() {
     log::info!("VITE_ENABLE_ADDON_DEV_MODE is set, attempting to start External API");
-    // Spawn a thread to start the External API server
-    std::thread::spawn(|| {
-        log::info!("Spawning thread to start External API");
-
-        // 获取当前目录并构建绝对路径
-        let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let script_path = current_dir.join("packages").join("server").join("dist").join("index.js");
-        let script_path_str = script_path.to_string_lossy();
-
-        log::info!("Current directory: {:?}", current_dir);
-        log::info!("Script path: {}", script_path_str);
-
-        // 检查脚本是否存在
-        if !script_path.exists() {
-            log::error!("External API script not found at: {}", script_path_str);
-            return;
-        }
-
-        // 使用绝对路径调用Node.js启动External API
-        let import_code = format!("import('{}').then(m => {{ console.log('Module loaded:', m); return m.startExternalApi({{host: '127.0.0.1', port: 3333}}); }}).then(() => console.log('External API started')).catch(console.error)", script_path_str);
-
-        log::info!("Executing Node.js command: node -e \"{}\"", import_code);
-
-        match std::process::Command::new("node")
-            .args(&["-e", &import_code])
-            .env("VITE_ENABLE_ADDON_DEV_MODE", "true")
-            .current_dir(&current_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
-            Ok(child) => {
-                log::info!("External API process spawned with PID: {:?}", child.id());
-            }
-            Err(e) => {
-                log::error!("Failed to start External API: {}", e);
-                log::error!("Current directory: {:?}", current_dir);
-                log::error!("Script path: {}", script_path_str);
-            }
+    // Spawn an async task to start the External API server
+    tauri::async_runtime::spawn(async move {
+        log::info!("Starting External API server");
+        let config = external_api::ExternalApiConfig {
+            host: "127.0.0.1".to_string(),
+            port: 3333,
+        };
+        if let Err(e) = external_api::start_external_api(config).await {
+            log::error!("Failed to start External API: {}", e);
         }
     });
 }
@@ -181,39 +138,35 @@ VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev
 ## 项目结构
 
 ```
-packages/
-  server/
-    src/
-      external-api/
-        app.ts          # Hono应用配置
-        index.ts        # 启动入口
-      index.ts           # 主入口点
-    package.json        # 依赖配置
-    tsconfig.json       # TypeScript配置
+src-tauri/
+  src/
+    external_api.rs     # Rust实现External API
+    lib.rs              # 集成启动逻辑
+  Cargo.toml            # 依赖配置
 ```
 
 ## 依赖项
 
-在 `packages/server/package.json` 中添加：
-```json
-{
-  "dependencies": {
-    "hono": "^4.6.12"
-  }
-}
+在 `src-tauri/Cargo.toml` 中添加：
+```toml
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["time", "sync", "rt-multi-thread", "macros"] }
+serde_json = "1.0.128"
+chrono = { version = "0.4.38", features = ["serde", "clock"] }
 ```
 
 ## 注意事项
 
-1. **路径问题**: 使用绝对路径确保Node.js脚本能正确加载
+1. **异步运行**: 使用 `tauri::async_runtime::spawn` 在Tauri的异步运行时中启动服务器
 2. **环境变量**: 通过 `VITE_ENABLE_ADDON_DEV_MODE` 环境变量控制启动
-3. **进程管理**: External API作为独立进程运行，不影响主程序
-4. **日志输出**: 详细的日志帮助调试启动问题
-5. **错误处理**: 完善的错误处理确保问题能被及时发现
+3. **进程管理**: External API作为异步任务运行，不影响主程序
+4. **日志输出**: 使用 `log::info!` 和 `println!` 输出日志
+5. **错误处理**: 使用 `Result` 和 `Box<dyn std::error::Error + Send + Sync>` 处理错误
 
 ## 验证步骤
 
-1. 编译TypeScript代码：`cd packages/server && pnpm build`
+1. 编译Rust代码：`cargo check`
 2. 启动Wealthfolio：`VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev`
 3. 测试API：`curl http://127.0.0.1:3333/api/health`
 4. 验证响应格式和内容

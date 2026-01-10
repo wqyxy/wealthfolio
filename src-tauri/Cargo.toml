@@ -19,7 +19,7 @@ diesel = { version = "2.3", features = ["sqlite", "chrono", "r2d2", "numeric", "
 dotenvy = "0.15.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.128"
-chrono = { version = "0.4.38", features = ["serde"] }
+chrono = { version = "0.4.38", features = ["serde", "clock"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
@@ -27,7 +27,8 @@ tauri-plugin-log = "2"
 log = "0.4"
 futures = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["time", "sync"] }
+tokio = { version = "1", features = ["time", "sync", "rt-multi-thread", "macros"] }
+axum = "0.7"
 keyring = "2.0"
 uuid = { version = "1.0", features = ["v4"] }
 local-ip-address = "0.6"

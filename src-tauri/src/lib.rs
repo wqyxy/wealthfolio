@@ -4,6 +4,7 @@
 mod commands;
 mod context;
 mod events;
+mod external_api;
 mod listeners;
 mod secret_store;
 
@@ -70,45 +71,15 @@ mod desktop {
         // Start External API server if addon dev mode is enabled
         if std::env::var("VITE_ENABLE_ADDON_DEV_MODE").is_ok() {
             log::info!("VITE_ENABLE_ADDON_DEV_MODE is set, attempting to start External API");
-            // Spawn a thread to start the External API server
-            std::thread::spawn(|| {
-                log::info!("Spawning thread to start External API");
-
-                // Get current directory and construct absolute path
-                let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-                let script_path = current_dir.join("packages").join("server").join("dist").join("index.js");
-                let script_path_str = script_path.to_string_lossy();
-
-                log::info!("Current directory: {:?}", current_dir);
-                log::info!("Script path: {}", script_path_str);
-
-                // Check if script exists
-                if !script_path.exists() {
-                    log::error!("External API script not found at: {}", script_path_str);
-                    return;
-                }
-
-                // Call Node.js to start the External API with absolute path
-                let import_code = format!("import('{}').then(m => {{ console.log('Module loaded:', m); return m.startExternalApi({{host: '127.0.0.1', port: 3333}}); }}).then(() => console.log('External API started')).catch(console.error)", script_path_str);
-
-                log::info!("Executing Node.js command: node -e \"{}\"", import_code);
-
-                match std::process::Command::new("node")
-                    .args(&["-e", &import_code])
-                    .env("VITE_ENABLE_ADDON_DEV_MODE", "true")
-                    .current_dir(&current_dir)
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .spawn()
-                {
-                    Ok(child) => {
-                        log::info!("External API process spawned with PID: {:?}", child.id());
-                    }
-                    Err(e) => {
-                        log::error!("Failed to start External API: {}", e);
-                        log::error!("Current directory: {:?}", current_dir);
-                        log::error!("Script path: {}", script_path_str);
-                    }
+            // Spawn an async task to start the External API server
+            tauri::async_runtime::spawn(async move {
+                log::info!("Starting External API server");
+                let config = external_api::ExternalApiConfig {
+                    host: "127.0.0.1".to_string(),
+                    port: 3333,
+                };
+                if let Err(e) = external_api::start_external_api(config).await {
+                    log::error!("Failed to start External API: {}", e);
                 }
             });
         }
