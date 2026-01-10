@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server'
-import { createExternalApiApp, type ExternalApiConfig } from './app'
+import { createExternalApiApp, type ExternalApiConfig } from './app.js'
 
 export interface ExternalApiServer {
   close: () => Promise<void>

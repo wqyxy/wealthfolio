@@ -1,36 +1,29 @@
 #!/usr/bin/env node
 
-import { startExternalApi } from './external-api'
+import { startExternalApi } from './external-api/index.js'
 
 async function main() {
   try {
-    // Check if we should start External API based on environment variable
-    const enableAddonDevMode = process.env.VITE_ENABLE_ADDON_DEV_MODE === 'true'
+    console.log('🚀 Starting External API Server...')
 
-    if (enableAddonDevMode) {
-      console.log('🚀 Starting External API Server in addon dev mode...')
+    // Start External API on port 3333
+    const externalApi = await startExternalApi({
+      host: '127.0.0.1',
+      port: 3333
+    })
 
-      // Start External API on port 3333
-      const externalApi = await startExternalApi({
-        host: '127.0.0.1',
-        port: 3333
-      })
+    // Keep the process alive
+    process.on('SIGINT', async () => {
+      console.log('\n🛑 Shutting down External API...')
+      await externalApi.close()
+      process.exit(0)
+    })
 
-      // Keep the process alive
-      process.on('SIGINT', async () => {
-        console.log('\n🛑 Shutting down External API...')
-        await externalApi.close()
-        process.exit(0)
-      })
-
-      process.on('SIGTERM', async () => {
-        console.log('\n🛑 Shutting down External API...')
-        await externalApi.close()
-        process.exit(0)
-      })
-    } else {
-      console.log('External API not started - VITE_ENABLE_ADDON_DEV_MODE not set to true')
-    }
+    process.on('SIGTERM', async () => {
+      console.log('\n🛑 Shutting down External API...')
+      await externalApi.close()
+      process.exit(0)
+    })
   } catch (error) {
     console.error('Failed to start External API:', error)
     process.exit(1)

@@ -126,9 +126,9 @@ if std::env::var("VITE_ENABLE_ADDON_DEV_MODE").is_ok() {
 
 ### 5. 启动方式
 
-External API会在以下命令执行时自动启动：
+External API会在Wealthfolio启动时自动启动，无需特殊环境变量：
 ```bash
-VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev
+pnpm tauri dev
 ```
 
 ## 测试验证
@@ -265,7 +265,7 @@ chrono = { version = "0.4.38", features = ["serde", "clock"] }
 ## 注意事项
 
 1. **异步运行**: 使用 `tauri::async_runtime::spawn` 在Tauri的异步运行时中启动服务器
-2. **环境变量**: 通过 `VITE_ENABLE_ADDON_DEV_MODE` 环境变量控制启动
+2. **自动启动**: External API在Wealthfolio启动时自动启动，无需特殊配置
 3. **进程管理**: External API作为异步任务运行，不影响主程序
 4. **日志输出**: 使用 `log::info!` 和 `println!` 输出日志
 5. **错误处理**: 使用 `Result` 和 `Box<dyn std::error::Error + Send + Sync>` 处理错误
@@ -273,7 +273,7 @@ chrono = { version = "0.4.38", features = ["serde", "clock"] }
 ## 验证步骤
 
 1. 编译Rust代码：`cargo check`
-2. 启动Wealthfolio：`VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev`
+2. 启动Wealthfolio：`pnpm tauri dev`
 3. 运行测试脚本：`./api_test.sh`
 4. 验证所有endpoints返回正确JSON格式数据
 

@@ -8,7 +8,7 @@ echo "🧪 Testing Wealthfolio External API at $BASE_URL"
 echo "======================================================"
 echo ""
 echo "⚠️  Make sure Wealthfolio is running with:"
-echo "   VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev"
+echo "   pnpm tauri dev"
 echo ""
 echo "⏳ Waiting for server to be ready..."
 sleep 3
@@ -19,7 +19,7 @@ health_check=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/health")
 if [ "$health_check" != "200" ]; then
     echo "❌ Server not responding (HTTP $health_check)"
     echo "💡 Make sure to start Wealthfolio first:"
-    echo "   VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev"
+    echo "   pnpm tauri dev"
     exit 1
 fi
 
