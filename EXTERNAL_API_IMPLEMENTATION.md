@@ -2,15 +2,16 @@
 
 ## 任务目标
 
-实现一个External API，作为附属服务随Wealthfolio主程序启动，并能通过本地端口访问。
+实现一个面向量化分析的External API，作为附属服务随Wealthfolio主程序启动，并能通过本地端口访问。
 
 ### 核心要求
-- 在Wealthfolio主程序启动后，可以通过 `GET http://127.0.0.1:3333/api/health` 稳定返回JSON
-- 不修改数据库、不访问sqlite、不调用任何services/repositories
+- 在Wealthfolio主程序启动后，可以通过各种GET endpoints稳定返回JSON
+- 不修改数据库、不访问sqlite、复用现有services/repositories
 - 不影响现有桌面/Web/Docker/Tauri行为
 - 不引入UI、session、auth、中间件
 - 仅监听127.0.0.1，不暴露公网
-- 新增代码量越少越好
+- 输出结构稳定、适合量化工具消费
+- 以base currency统一输出，保留原始币种信息
 
 ## 实现方案
 
@@ -22,9 +23,17 @@
 - **框架**: Axum (轻量级Web框架)
 - **语言**: Rust
 - **监听地址**: 127.0.0.1:3333
-- **API路径**: `/api/health`
+- **API路径**: `/api/health`, `/api/portfolio/holdings`, `/api/portfolio/accounts`, `/api/exchange-rates`, `/api/settings/base-currency`
 
-### 3. 核心功能实现
+### 3. API Endpoints
+
+- `GET /api/health` - 健康检查，返回系统状态
+- `GET /api/portfolio/holdings?account_id={optional}` - 获取持仓数据，如果指定account_id则获取单个账户，否则获取所有账户
+- `GET /api/portfolio/accounts` - 获取账户列表
+- `GET /api/exchange-rates` - 获取最新汇率
+- `GET /api/settings/base-currency` - 获取基础货币设置
+
+### 4. 核心功能实现
 
 #### External API应用 (`src-tauri/src/external_api.rs`)
 ```rust
@@ -43,11 +52,15 @@ pub struct ExternalApiConfig {
     pub host: String,
 }
 
-/// Creates the external API router with health and root endpoints
+/// Creates the external API router with all endpoints
 pub fn create_external_api_router(config: ExternalApiConfig) -> Router {
     Router::new()
         .route("/api/health", get(health_handler))
         .route("/", get(root_handler))
+        .route("/api/portfolio/holdings", get(portfolio_holdings_handler))
+        .route("/api/portfolio/accounts", get(portfolio_accounts_handler))
+        .route("/api/exchange-rates", get(exchange_rates_handler))
+        .route("/api/settings/base-currency", get(base_currency_handler))
         .with_state(config)
 }
 
@@ -122,16 +135,109 @@ VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev
 
 ### 成功标准
 1. 启动Wealthfolio主程序后，External API自动启动
-2. 执行 `curl http://127.0.0.1:3333/api/health` 能成功连接
-3. 返回HTTP 200状态码
-4. 返回JSON格式数据，可被Python requests.get().json()直接解析
+2. 所有endpoints返回HTTP 200状态码
+3. 返回JSON格式数据，可被Python requests.get().json()直接解析
+4. 数据结构稳定，包含base currency统一的值和原始币种信息
+5. 时间字段使用RFC3339格式
 
-### 预期响应
+### API Endpoints测试
+
+#### Health Check
+```bash
+curl http://127.0.0.1:3333/api/health
+```
+
+预期响应：
 ```json
 {
   "status": "ok",
-  "timestamp": "2026-01-10T10:00:00.000Z",
+  "timestamp": "2026-01-10T14:00:00.000000Z",
   "port": 3333
+}
+```
+
+#### Portfolio Holdings
+```bash
+curl http://127.0.0.1:3333/api/portfolio/holdings
+```
+
+预期响应：
+```json
+{
+  "holdings": [
+    {
+      "id": "SEC-account1-AAPL",
+      "accountId": "account1",
+      "holdingType": "Security",
+      "instrument": {
+        "id": "AAPL",
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "currency": "USD",
+        "assetClass": "Equity"
+      },
+      "quantity": 100,
+      "openDate": "2023-01-01T00:00:00Z",
+      "localCurrency": "USD",
+      "baseCurrency": "USD",
+      "fxRate": 1.0,
+      "marketValue": { "local": 15000, "base": 15000 },
+      "weight": 0.5,
+      "asOfDate": "2026-01-10"
+    }
+  ],
+  "baseCurrency": "USD"
+}
+```
+
+#### Portfolio Accounts
+```bash
+curl http://127.0.0.1:3333/api/portfolio/accounts
+```
+
+预期响应：
+```json
+{
+  "accounts": [
+    {
+      "id": "account1",
+      "name": "Main Account",
+      "accountType": "Brokerage",
+      "currency": "USD",
+      "isActive": true
+    }
+  ]
+}
+```
+
+#### Exchange Rates
+```bash
+curl http://127.0.0.1:3333/api/exchange-rates
+```
+
+预期响应：
+```json
+{
+  "exchangeRates": [
+    {
+      "from": "EUR",
+      "to": "USD",
+      "rate": 1.05,
+      "timestamp": "2026-01-10T14:00:00.000000Z"
+    }
+  ]
+}
+```
+
+#### Base Currency
+```bash
+curl http://127.0.0.1:3333/api/settings/base-currency
+```
+
+预期响应：
+```json
+{
+  "baseCurrency": "USD"
 }
 ```
 
@@ -168,5 +274,9 @@ chrono = { version = "0.4.38", features = ["serde", "clock"] }
 
 1. 编译Rust代码：`cargo check`
 2. 启动Wealthfolio：`VITE_ENABLE_ADDON_DEV_MODE=true pnpm tauri dev`
-3. 测试API：`curl http://127.0.0.1:3333/api/health`
-4. 验证响应格式和内容
+3. 运行测试脚本：`./api_test.sh`
+4. 验证所有endpoints返回正确JSON格式数据
+
+## 测试脚本
+
+使用 `api_test.sh` 脚本测试所有API endpoints。

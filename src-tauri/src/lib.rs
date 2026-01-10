@@ -72,11 +72,13 @@ mod desktop {
         if std::env::var("VITE_ENABLE_ADDON_DEV_MODE").is_ok() {
             log::info!("VITE_ENABLE_ADDON_DEV_MODE is set, attempting to start External API");
             // Spawn an async task to start the External API server
+            let context_clone = Arc::clone(&context);
             tauri::async_runtime::spawn(async move {
                 log::info!("Starting External API server");
                 let config = external_api::ExternalApiConfig {
                     host: "127.0.0.1".to_string(),
                     port: 3333,
+                    context: context_clone,
                 };
                 if let Err(e) = external_api::start_external_api(config).await {
                     log::error!("Failed to start External API: {}", e);
