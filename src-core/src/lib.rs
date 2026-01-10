@@ -16,6 +16,8 @@ pub mod schema;
 pub mod secrets;
 pub mod settings;
 pub mod utils;
+
+pub use external_api::{ExternalApiService, ExternalApiServiceTrait};
 pub use assets::*;
 pub use portfolio::*;
 

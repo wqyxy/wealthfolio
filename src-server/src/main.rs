@@ -23,11 +23,11 @@ async fn main() -> anyhow::Result<()> {
     // Start External API server
     let external_api_state = Arc::clone(&state);
     tokio::spawn(async move {
-        let external_api_config = external_api::ExternalApiConfig {
-            host: "0.0.0.0".to_string(),
-            port: 3333,
-            state: external_api_state,
-        };
+        let external_api_config = external_api::create_external_api_config(
+            3333,
+            "0.0.0.0".to_string(),
+            external_api_state,
+        );
         if let Err(e) = external_api::start_external_api(external_api_config).await {
             tracing::error!("Failed to start External API: {}", e);
         }

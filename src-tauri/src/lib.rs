@@ -74,11 +74,11 @@ mod desktop {
         let context_clone = Arc::clone(&context);
         tauri::async_runtime::spawn(async move {
             log::info!("Starting External API server on port 3333");
-            let config = external_api::ExternalApiConfig {
-                host: "0.0.0.0".to_string(),
-                port: 3333,
-                context: context_clone,
-            };
+            let config = external_api::create_external_api_config(
+                3333,
+                "0.0.0.0".to_string(),
+                context_clone,
+            );
             if let Err(e) = external_api::start_external_api(config).await {
                 log::error!("Failed to start External API: {}", e);
             }
