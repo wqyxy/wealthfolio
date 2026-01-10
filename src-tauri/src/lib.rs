@@ -9,15 +9,14 @@ mod secret_store;
 
 #[cfg(desktop)]
 mod menu;
+
 #[cfg(desktop)]
 mod updater;
 
 use std::sync::Arc;
-
 use dotenvy::dotenv;
 use log::error;
 use tauri::{AppHandle, Manager};
-
 use events::emit_app_ready;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +58,7 @@ mod desktop {
         let context = tauri::async_runtime::block_on(async {
             context::initialize_context(app_data_dir).await
         })?;
+
         let context = Arc::new(context);
 
         // Make context available to all commands
@@ -66,6 +66,52 @@ mod desktop {
 
         // Menu setup is synchronous (no I/O)
         setup_menu(&handle, &context.instance_id);
+
+        // Start External API server if addon dev mode is enabled
+        if std::env::var("VITE_ENABLE_ADDON_DEV_MODE").is_ok() {
+            log::info!("VITE_ENABLE_ADDON_DEV_MODE is set, attempting to start External API");
+            // Spawn a thread to start the External API server
+            std::thread::spawn(|| {
+                log::info!("Spawning thread to start External API");
+
+                // Get current directory and construct absolute path
+                let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                let script_path = current_dir.join("packages").join("server").join("dist").join("index.js");
+                let script_path_str = script_path.to_string_lossy();
+
+                log::info!("Current directory: {:?}", current_dir);
+                log::info!("Script path: {}", script_path_str);
+
+                // Check if script exists
+                if !script_path.exists() {
+                    log::error!("External API script not found at: {}", script_path_str);
+                    return;
+                }
+
+                // Call Node.js to start the External API with absolute path
+                let import_code = format!("import('{}').then(m => {{ console.log('Module loaded:', m); return m.startExternalApi({{host: '127.0.0.1', port: 3333}}); }}).then(() => console.log('External API started')).catch(console.error)", script_path_str);
+
+                log::info!("Executing Node.js command: node -e \"{}\"", import_code);
+
+                match std::process::Command::new("node")
+                    .args(&["-e", &import_code])
+                    .env("VITE_ENABLE_ADDON_DEV_MODE", "true")
+                    .current_dir(&current_dir)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    Ok(child) => {
+                        log::info!("External API process spawned with PID: {:?}", child.id());
+                    }
+                    Err(e) => {
+                        log::error!("Failed to start External API: {}", e);
+                        log::error!("Current directory: {:?}", current_dir);
+                        log::error!("Script path: {}", script_path_str);
+                    }
+                }
+            });
+        }
 
         // Notify frontend that app is ready
         // The frontend will trigger the initial portfolio update and update check after it's mounted
@@ -175,6 +221,7 @@ pub fn run() {
             commands::account::create_account,
             commands::account::update_account,
             commands::account::delete_account,
+
             // Activity commands
             commands::activity::search_activities,
             commands::activity::get_activities,
@@ -186,6 +233,7 @@ pub fn run() {
             commands::activity::import_activities,
             commands::activity::get_account_import_mapping,
             commands::activity::save_account_import_mapping,
+
             // Settings commands
             commands::settings::get_settings,
             commands::settings::is_auto_update_check_enabled,
@@ -194,6 +242,7 @@ pub fn run() {
             commands::settings::update_exchange_rate,
             commands::settings::add_exchange_rate,
             commands::settings::delete_exchange_rate,
+
             // Goal commands
             commands::goal::create_goal,
             commands::goal::update_goal,
@@ -201,6 +250,7 @@ pub fn run() {
             commands::goal::get_goals,
             commands::goal::update_goal_allocations,
             commands::goal::load_goals_allocations,
+
             // Portfolio commands
             commands::portfolio::get_holdings,
             commands::portfolio::get_holding,
@@ -212,12 +262,14 @@ pub fn run() {
             commands::portfolio::recalculate_portfolio,
             commands::portfolio::calculate_performance_summary,
             commands::portfolio::calculate_performance_history,
+
             // Contribution limit commands
             commands::limits::get_contribution_limits,
             commands::limits::create_contribution_limit,
             commands::limits::update_contribution_limit,
             commands::limits::delete_contribution_limit,
             commands::limits::calculate_deposits_for_contribution_limit,
+
             // Utility commands
             commands::utilities::get_app_info,
             commands::utilities::check_for_updates,
@@ -225,12 +277,14 @@ pub fn run() {
             commands::utilities::backup_database,
             commands::utilities::backup_database_to_path,
             commands::utilities::restore_database,
+
             // Asset commands
             commands::asset::get_asset_profile,
             commands::asset::get_assets,
             commands::asset::update_asset_profile,
             commands::asset::update_asset_data_source,
             commands::asset::delete_asset,
+
             // Market data commands
             commands::market_data::search_symbol,
             commands::market_data::sync_market_data,
@@ -240,17 +294,21 @@ pub fn run() {
             commands::market_data::get_latest_quotes,
             commands::market_data::get_market_data_providers,
             commands::market_data::import_quotes_csv,
+
             // Platform commands
             commands::platform::get_platform,
             commands::platform::is_mobile,
             commands::platform::is_desktop,
+
             // Secrets commands
             commands::secrets::set_secret,
             commands::secrets::get_secret,
             commands::secrets::delete_secret,
+
             // Provider settings commands
             commands::providers_settings::get_market_data_providers_settings,
             commands::providers_settings::update_market_data_provider_settings,
+
             // Addon commands
             commands::addon::extract_addon_zip,
             commands::addon::install_addon_zip,
