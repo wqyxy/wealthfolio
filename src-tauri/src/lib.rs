@@ -75,7 +75,7 @@ mod desktop {
         tauri::async_runtime::spawn(async move {
             log::info!("Starting External API server on port 3333");
             let config = external_api::ExternalApiConfig {
-                host: "127.0.0.1".to_string(),
+                host: "0.0.0.0".to_string(),
                 port: 3333,
                 context: context_clone,
             };

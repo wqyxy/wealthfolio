@@ -22,7 +22,7 @@
 ### 2. 技术选型
 - **框架**: Axum (轻量级Web框架)
 - **语言**: Rust
-- **监听地址**: 127.0.0.1:3333
+- **监听地址**: 0.0.0.0:3333
 - **API路径**: `/api/health`, `/api/portfolio/holdings`, `/api/portfolio/accounts`, `/api/exchange-rates`, `/api/settings/base-currency`
 
 ### 3. API Endpoints
