@@ -13,16 +13,30 @@
 - 输出结构稳定、适合量化工具消费
 - 以base currency统一输出，保留原始币种信息
 
-## 实现方案
+## 重构后的架构
 
-### 1. 创建External API模块结构
+### 1. 架构设计
 
-在 `src-tauri/src/external_api.rs` 中实现Rust版本的External API。
+经过重构，现在使用**共享核心 + 平台适配器**的架构：
+
+```
+src-core/src/external_api.rs     # 共享业务逻辑和数据转换
+├── ExternalApiServiceTrait      # 统一接口定义
+├── ExternalApiService          # 核心实现
+└── handlers                    # 通用handler函数
+
+src-server/src/external_api.rs   # Web模式适配器 (~80行)
+└── 路由配置 + AppState适配
+
+src-tauri/src/external_api.rs    # 桌面模式适配器 (~80行)
+└── 路由配置 + ServiceContext适配
+```
 
 ### 2. 技术选型
 - **框架**: Axum (轻量级Web框架)
 - **语言**: Rust
-- **监听地址**: 0.0.0.0:3333
+- **监听地址**: 0.0.0.0:3333 (桌面), 127.0.0.1:8080 (Web)
+- **架构模式**: Trait-based 依赖注入 + 适配器模式
 - **API路径**: `/api/health`, `/api/portfolio/holdings`, `/api/portfolio/accounts`, `/api/exchange-rates`, `/api/settings/base-currency`
 
 ### 3. API Endpoints
@@ -33,102 +47,95 @@
 - `GET /api/exchange-rates` - 获取最新汇率
 - `GET /api/settings/base-currency` - 获取基础货币设置
 
-### 4. 核心功能实现
+### 4. 核心实现
 
-#### External API应用 (`src-tauri/src/external_api.rs`)
+#### 共享核心逻辑 (`src-core/src/external_api.rs`)
+
 ```rust
-use axum::{
-    routing::get,
-    Router,
-    Json,
-};
-use serde_json::json;
-use std::net::SocketAddr;
-
-/// Configuration for the external API server
-#[derive(Clone)]
-pub struct ExternalApiConfig {
-    pub port: u16,
-    pub host: String,
+#[async_trait]
+pub trait ExternalApiServiceTrait: Send + Sync {
+    async fn get_holdings(&self, account_id: Option<String>) -> Result<Value>;
+    fn get_accounts(&self) -> Result<Value>;
+    fn get_exchange_rates(&self) -> Result<Value>;
+    fn get_base_currency(&self) -> Result<Value>;
 }
 
-/// Creates the external API router with all endpoints
-pub fn create_external_api_router(config: ExternalApiConfig) -> Router {
-    Router::new()
-        .route("/api/health", get(health_handler))
-        .route("/", get(root_handler))
-        .route("/api/portfolio/holdings", get(portfolio_holdings_handler))
-        .route("/api/portfolio/accounts", get(portfolio_accounts_handler))
-        .route("/api/exchange-rates", get(exchange_rates_handler))
-        .route("/api/settings/base-currency", get(base_currency_handler))
-        .with_state(config)
-}
+pub struct ExternalApiService { /* ... */ }
 
-/// Health check handler
-async fn health_handler(
-    axum::extract::State(config): axum::extract::State<ExternalApiConfig>,
-) -> Json<serde_json::Value> {
-    Json(json!({
-        "status": "ok",
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "port": config.port
-    }))
-}
+// 通用数据转换函数
+pub fn holdings_to_json(holdings: Vec<Holding>) -> Vec<Value> { /* ... */ }
+pub fn accounts_to_json(accounts: Vec<Account>) -> Vec<Value> { /* ... */ }
 
-/// Root handler
-async fn root_handler(
-    axum::extract::State(config): axum::extract::State<ExternalApiConfig>,
-) -> Json<serde_json::Value> {
-    Json(json!({
-        "message": "Wealthfolio External API",
-        "status": "running",
-        "port": config.port
-    }))
-}
+// 通用handler函数
+pub async fn portfolio_holdings_handler(
+    service: &dyn ExternalApiServiceTrait,
+    query: HoldingsQuery,
+) -> Value { /* ... */ }
+```
 
-/// Starts the external API server
-pub async fn start_external_api(config: ExternalApiConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let app = create_external_api_router(config.clone());
+#### 平台适配器示例
 
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    println!("🚀 External API Server ready at http://{}:{}", config.host, config.port);
-    println!("📊 Health endpoint: http://{}:{}/api/health", config.host, config.port);
+```rust
+// src-tauri/src/external_api.rs
+pub fn create_external_api_config(
+    port: u16,
+    host: String,
+    context: Arc<ServiceContext>
+) -> ExternalApiConfig {
+    let service = Arc::new(ExternalApiService::new(
+        context.account_service(),
+        context.holdings_service(),
+        context.fx_service(),
+        context.settings_service(),
+    ));
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
-
-    Ok(())
+    ExternalApiConfig { port, host, service }
 }
 ```
 
-### 4. 集成到主服务启动流程
+### 5. 启动流程
 
-#### 修改Tauri启动流程 (`src-tauri/src/lib.rs`)
-在desktop模块的setup函数中添加External API启动逻辑：
+#### 桌面模式 (Tauri)
+External API 在 Wealthfolio 桌面应用启动时自动启动：
 
 ```rust
-// Start External API server if addon dev mode is enabled
-if std::env::var("VITE_ENABLE_ADDON_DEV_MODE").is_ok() {
-    log::info!("VITE_ENABLE_ADDON_DEV_MODE is set, attempting to start External API");
-    // Spawn an async task to start the External API server
-    tauri::async_runtime::spawn(async move {
-        log::info!("Starting External API server");
-        let config = external_api::ExternalApiConfig {
-            host: "127.0.0.1".to_string(),
-            port: 3333,
-        };
-        if let Err(e) = external_api::start_external_api(config).await {
-            log::error!("Failed to start External API: {}", e);
-        }
-    });
-}
+// src-tauri/src/lib.rs
+tauri::async_runtime::spawn(async move {
+    log::info!("Starting External API server for quantitative analysis");
+    let config = external_api::create_external_api_config(
+        3333, "0.0.0.0".to_string(), context_clone,
+    );
+    if let Err(e) = external_api::start_external_api(config).await {
+        log::error!("Failed to start External API: {}", e);
+    }
+});
 ```
 
-### 5. 启动方式
+#### Web模式 (Axum服务器)
+External API 在 Web 服务器启动时自动启动：
 
-External API会在Wealthfolio启动时自动启动，无需特殊环境变量：
+```rust
+// src-server/src/main.rs
+tokio::spawn(async move {
+    let config = external_api::create_external_api_config(
+        3333, "0.0.0.0".to_string(), state,
+    );
+    // 启动逻辑...
+});
+```
+
+### 6. 启动方式
+
+两个平台都会自动启动 External API：
+
 ```bash
+# 桌面模式
 pnpm tauri dev
+
+# Web模式
+cargo run --manifest-path src-server/Cargo.toml
+# 或
+pnpm run dev:web
 ```
 
 ## 测试验证
@@ -241,19 +248,56 @@ curl http://127.0.0.1:3333/api/settings/base-currency
 }
 ```
 
+## 重构成果
+
+### 代码重用统计
+- **重构前**: `src-server` 和 `src-tauri` 的 external_api.rs 各 ~250 行，重复代码 ~200 行
+- **重构后**:
+  - `src-core/src/external_api.rs`: 共享逻辑 (~150 行)
+  - `src-server/src/external_api.rs`: 适配器 (~80 行)
+  - `src-tauri/src/external_api.rs`: 适配器 (~80 行)
+- **减少**: 约 60% 的重复代码
+
+### 架构优势
+1. **单一业务逻辑**: 所有数据转换和业务逻辑集中在 `src-core`
+2. **平台无关**: 核心逻辑不依赖特定平台的服务接口
+3. **易于维护**: 修改 API 逻辑只需在一个地方进行
+4. **类型安全**: 使用 Rust trait 确保接口一致性
+5. **性能优化**: 避免代码重复，减小二进制大小
+
 ## 项目结构
 
 ```
+src-core/
+  src/
+    external_api.rs          # 共享业务逻辑和数据转换
+    lib.rs                   # 导出 ExternalApiServiceTrait
+
+src-server/
+  src/
+    external_api.rs          # Web模式适配器 (~80行)
+    main.rs                  # 启动逻辑集成
+
 src-tauri/
   src/
-    external_api.rs     # Rust实现External API
-    lib.rs              # 集成启动逻辑
-  Cargo.toml            # 依赖配置
+    external_api.rs          # 桌面模式适配器 (~80行)
+    lib.rs                   # 启动逻辑集成
+  Cargo.toml                 # 依赖配置
 ```
 
 ## 依赖项
 
-在 `src-tauri/Cargo.toml` 中添加：
+### 共享依赖 (src-core/Cargo.toml)
+```toml
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = "1.35"
+```
+
+### 平台依赖 (src-tauri/Cargo.toml 和 src-server/Cargo.toml)
 ```toml
 [dependencies]
 axum = "0.7"
@@ -264,19 +308,79 @@ chrono = { version = "0.4.38", features = ["serde", "clock"] }
 
 ## 注意事项
 
-1. **异步运行**: 使用 `tauri::async_runtime::spawn` 在Tauri的异步运行时中启动服务器
-2. **自动启动**: External API在Wealthfolio启动时自动启动，无需特殊配置
-3. **进程管理**: External API作为异步任务运行，不影响主程序
-4. **日志输出**: 使用 `log::info!` 和 `println!` 输出日志
-5. **错误处理**: 使用 `Result` 和 `Box<dyn std::error::Error + Send + Sync>` 处理错误
+### 架构设计原则
+1. **关注点分离**: 业务逻辑 vs 平台适配 vs 路由配置
+2. **依赖倒置**: 通过 trait 定义接口，平台提供具体实现
+3. **单一职责**: 每个模块只负责一个明确的功能
+
+### 运行时特性
+1. **异步运行**: 使用 `tokio::spawn` 或 `tauri::async_runtime::spawn` 启动服务器
+2. **自动启动**: External API 在 Wealthfolio 启动时自动启动
+3. **进程隔离**: External API 作为独立异步任务运行，不影响主程序
+4. **资源管理**: 使用 Arc 进行线程安全的共享状态管理
+
+### 错误处理
+1. **统一错误类型**: 使用 `wealthfolio_core::errors::Result`
+2. **优雅降级**: API 错误不影响主程序运行
+3. **日志记录**: 详细的错误日志用于调试
 
 ## 验证步骤
 
-1. 编译Rust代码：`cargo check`
-2. 启动Wealthfolio：`pnpm tauri dev`
-3. 运行测试脚本：`./api_test.sh`
-4. 验证所有endpoints返回正确JSON格式数据
+### 编译验证
+```bash
+# 验证核心模块
+cargo check --manifest-path src-core/Cargo.toml
 
-## 测试脚本
+# 验证平台模块
+cargo check --manifest-path src-server/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml
+```
 
-使用 `api_test.sh` 脚本测试所有API endpoints。
+### 功能验证
+```bash
+# 桌面模式
+pnpm tauri dev
+
+# Web模式
+pnpm run dev:web
+
+# 直接启动服务器
+cargo run --manifest-path src-server/Cargo.toml
+```
+
+### API测试
+```bash
+# 桌面模式 (端口 3333)
+curl http://127.0.0.1:3333/api/health
+
+# Web模式 (端口 8080)
+curl http://127.0.0.1:8080/api/health
+```
+
+## 维护指南
+
+### 添加新API端点
+1. 在 `ExternalApiServiceTrait` 中定义方法
+2. 在 `ExternalApiService` 中实现业务逻辑
+3. 在 `src-core/src/external_api.rs` 中添加 handler 函数
+4. 在两个平台的适配器中添加路由
+
+### 修改数据格式
+1. 更新 `src-core/src/external_api.rs` 中的转换函数
+2. 两个平台的响应会自动保持一致
+
+### 平台特定定制
+1. 在平台适配器的 `create_external_api_config` 中调整服务注入
+2. 保持核心逻辑不变
+
+## 故障排除
+
+### 常见问题
+1. **编译错误**: 检查 trait bound 和泛型参数
+2. **运行时错误**: 验证服务依赖注入是否正确
+3. **端口冲突**: 检查端口 3333/8080 是否被占用
+
+### 调试技巧
+1. 使用 `RUST_LOG=debug` 查看详细日志
+2. 检查 `cargo build` 的警告信息
+3. 验证两个平台的 API 响应是否一致
