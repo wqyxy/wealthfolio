@@ -1,5 +1,5 @@
 use axum::{
-    extract::Query,
+    extract::{Path, Query},
     routing::get,
     Router,
     Json,
@@ -51,6 +51,45 @@ pub fn create_external_api_router(config: ExternalApiConfig) -> Router {
                 Json(wealthfolio_core::external_api::base_currency_handler(service.as_ref()).await)
             }
         }))
+        // Market data routes
+        .route("/api/market-data/search", get({
+            let service = service_clone.clone();
+            move |Query(query): Query<wealthfolio_core::external_api::MarketDataSearchQuery>| async move {
+                Json(wealthfolio_core::external_api::market_data_search_handler(service.as_ref(), query).await)
+            }
+        }))
+        .route("/api/market-data/quotes/{symbol}", get({
+            let service = service_clone.clone();
+            move |Path(symbol): Path<String>| async move {
+                Json(wealthfolio_core::external_api::quote_handler(service.as_ref(), &symbol).await)
+            }
+        }))
+        .route("/api/market-data/historical/{symbol}", get({
+            let service = service_clone.clone();
+            move |Path(symbol): Path<String>| async move {
+                Json(wealthfolio_core::external_api::historical_quotes_handler(service.as_ref(), &symbol).await)
+            }
+        }))
+        // Performance routes
+        .route("/api/portfolio/performance/{account_id}", get({
+            let service = service_clone.clone();
+            move |Path(account_id): Path<String>| async move {
+                Json(wealthfolio_core::external_api::account_performance_handler(service.as_ref(), &account_id).await)
+            }
+        }))
+        .route("/api/portfolio/performance/summary", get({
+            let service = service_clone.clone();
+            move || async move {
+                Json(wealthfolio_core::external_api::portfolio_performance_summary_handler(service.as_ref()).await)
+            }
+        }))
+        // Activities routes
+        .route("/api/portfolio/activities", get({
+            let service = service_clone.clone();
+            move |Query(query): Query<wealthfolio_core::external_api::ActivitiesQuery>| async move {
+                Json(wealthfolio_core::external_api::activities_handler(service.as_ref(), query).await)
+            }
+        }))
 }
 
 /// Starts the external API server
@@ -78,6 +117,9 @@ pub fn create_external_api_config(
         state.holdings_service.clone(),
         state.fx_service.clone(),
         state.settings_service.clone(),
+        state.market_data_service.clone(),
+        state.performance_service.clone(),
+        state.activity_service.clone(),
     ));
 
     ExternalApiConfig {

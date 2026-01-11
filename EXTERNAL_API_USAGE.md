@@ -137,6 +137,48 @@ print(f"总市值: {holdings['baseCurrency']} {sum(h['marketValue']['base'] for 
 }
 ```
 
+### 市场数据
+
+#### `GET /api/market-data/search?q={query}`
+搜索市场数据。
+
+**查询参数**:
+- `q` (必需): 搜索查询字符串
+
+#### `GET /api/market-data/quotes/{symbol}`
+获取特定股票的最新报价。
+
+**路径参数**:
+- `symbol` (必需): 股票代码，如 "AAPL"
+
+#### `GET /api/market-data/historical/{symbol}`
+获取特定股票的历史报价数据。
+
+**路径参数**:
+- `symbol` (必需): 股票代码，如 "AAPL"
+
+### 投资组合分析
+
+#### `GET /api/portfolio/performance/{account_id}`
+获取特定账户的绩效指标。
+
+**路径参数**:
+- `account_id` (必需): 账户ID
+
+#### `GET /api/portfolio/performance/summary`
+获取投资组合的汇总绩效指标。
+
+### 交易记录
+
+#### `GET /api/portfolio/activities`
+获取所有交易活动记录。
+
+#### `GET /api/portfolio/activities?account_id={account_id}`
+获取特定账户的交易活动记录。
+
+**查询参数**:
+- `account_id` (可选): 账户ID，用于筛选特定账户的活动
+
 ### 持仓数据
 
 #### `GET /api/portfolio/holdings`
@@ -200,6 +242,152 @@ print(f"总市值: {holdings['baseCurrency']} {sum(h['marketValue']['base'] for 
     }
   ],
   "baseCurrency": "CNY"
+}
+```
+
+#### `GET /api/market-data/search?q=apple`
+```bash
+curl "http://127.0.0.1:3333/api/market-data/search?q=apple"
+```
+
+**响应示例**:
+```json
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "exchange": "NASDAQ",
+      "name": "Apple Inc.",
+      "type": "EQUITY",
+      "currency": "USD"
+    }
+  ]
+}
+```
+
+#### `GET /api/market-data/quotes/{symbol}`
+```bash
+curl "http://127.0.0.1:3333/api/market-data/quotes/AAPL"
+```
+
+**响应示例**:
+```json
+{
+  "quote": {
+    "id": "20240110_AAPL",
+    "symbol": "AAPL",
+    "timestamp": "2026-01-10T16:00:00Z",
+    "open": 185.92,
+    "high": 186.95,
+    "low": 185.59,
+    "close": 186.19,
+    "volume": 46792908,
+    "currency": "USD",
+    "dataSource": "YAHOO"
+  }
+}
+```
+
+#### `GET /api/market-data/historical/{symbol}`
+```bash
+curl "http://127.0.0.1:3333/api/market-data/historical/AAPL"
+```
+
+**响应示例**:
+```json
+{
+  "symbol": "AAPL",
+  "quotes": [
+    {
+      "id": "20240109_AAPL",
+      "symbol": "AAPL",
+      "timestamp": "2026-01-09T16:00:00Z",
+      "open": 184.22,
+      "high": 185.15,
+      "low": 182.73,
+      "close": 185.92,
+      "volume": 42841800,
+      "currency": "USD",
+      "dataSource": "YAHOO"
+    }
+  ]
+}
+```
+
+#### `GET /api/portfolio/performance/{account_id}`
+```bash
+curl "http://127.0.0.1:3333/api/portfolio/performance/42129ef0-ecab-4803-b3e9-9e7b10af5f6c"
+```
+
+**响应示例**:
+```json
+{
+  "accountId": "42129ef0-ecab-4803-b3e9-9e7b10af5f6c",
+  "performance": {
+    "id": "42129ef0-ecab-4803-b3e9-9e7b10af5f6c",
+    "currency": "CNY",
+    "periodStartDate": "2024-01-01",
+    "periodEndDate": "2026-01-10",
+    "cumulativeTWR": 0.1523,
+    "gainLossAmount": 15230.50,
+    "annualizedTWR": 0.0761,
+    "simpleReturn": 0.1523,
+    "annualizedSimpleReturn": 0.0761,
+    "volatility": 0.2345,
+    "maxDrawdown": -0.1234
+  }
+}
+```
+
+#### `GET /api/portfolio/performance/summary`
+```bash
+curl "http://127.0.0.1:3333/api/portfolio/performance/summary"
+```
+
+**响应示例**:
+```json
+{
+  "performances": [
+    {
+      "accountId": "42129ef0-ecab-4803-b3e9-9e7b10af5f6c",
+      "totalValue": 115230.50,
+      "accountCurrency": "USD",
+      "baseCurrency": "CNY",
+      "fxRateToBase": 7.25,
+      "totalGainLossAmount": 15230.50,
+      "cumulativeReturnPercent": 0.1523,
+      "dayGainLossAmount": 123.45,
+      "dayReturnPercentModDietz": 0.0011,
+      "portfolioWeight": 0.85
+    }
+  ]
+}
+```
+
+#### `GET /api/portfolio/activities`
+```bash
+curl "http://127.0.0.1:3333/api/portfolio/activities"
+```
+
+**响应示例**:
+```json
+{
+  "activities": [
+    {
+      "id": "act_123456",
+      "accountId": "42129ef0-ecab-4803-b3e9-9e7b10af5f6c",
+      "activityType": "BUY",
+      "date": "2026-01-10T10:30:00Z",
+      "assetId": "BABA",
+      "symbolName": "Alibaba Group Holding Limited",
+      "quantity": 100.0,
+      "price": 80.50,
+      "currency": "USD",
+      "fee": 5.00,
+      "totalAmount": 8055.00,
+      "description": "BABA Buy 100 shares @ $80.50"
+    }
+  ]
 }
 ```
 

@@ -41,11 +41,24 @@ src-tauri/src/external_api.rs    # 桌面模式适配器 (~80行)
 
 ### 3. API Endpoints
 
+#### 基础端点
 - `GET /api/health` - 健康检查，返回系统状态
-- `GET /api/portfolio/holdings?account_id={optional}` - 获取持仓数据，如果指定account_id则获取单个账户，否则获取所有账户
-- `GET /api/portfolio/accounts` - 获取账户列表
-- `GET /api/exchange-rates` - 获取最新汇率
 - `GET /api/settings/base-currency` - 获取基础货币设置
+
+#### 市场数据端点
+- `GET /api/market-data/search?q={query}` - 搜索市场数据
+- `GET /api/market-data/quotes/{symbol}` - 获取股票报价
+- `GET /api/market-data/historical/{symbol}` - 获取历史数据
+
+#### 投资组合端点
+- `GET /api/portfolio/accounts` - 获取账户列表
+- `GET /api/portfolio/holdings?account_id={optional}` - 获取持仓数据
+- `GET /api/portfolio/performance/{account_id}` - 获取账户绩效
+- `GET /api/portfolio/performance/summary` - 获取投资组合绩效汇总
+- `GET /api/portfolio/activities?account_id={optional}` - 获取交易活动
+
+#### 财务数据端点
+- `GET /api/exchange-rates` - 获取最新汇率
 
 ### 4. 核心实现
 
@@ -252,11 +265,18 @@ curl http://127.0.0.1:3333/api/settings/base-currency
 
 ### 代码重用统计
 - **重构前**: `src-server` 和 `src-tauri` 的 external_api.rs 各 ~250 行，重复代码 ~200 行
-- **重构后**:
+- **重构后** (基础API):
   - `src-core/src/external_api.rs`: 共享逻辑 (~150 行)
   - `src-server/src/external_api.rs`: 适配器 (~80 行)
   - `src-tauri/src/external_api.rs`: 适配器 (~80 行)
 - **减少**: 约 60% 的重复代码
+
+### 新增API扩展统计
+- **扩展后**: 新增6个API端点，从5个增加到11个
+- **共享逻辑增加**: ~200行新增代码，100%平台共享
+- **平台适配**: 每个平台增加~30行路由配置，无重复代码
+- **功能覆盖**: 市场数据搜索/报价/历史、投资组合绩效分析、交易记录查询
+- **代码复用率**: 新功能100%共享，架构优势完全保持
 
 ### 架构优势
 1. **单一业务逻辑**: 所有数据转换和业务逻辑集中在 `src-core`
@@ -361,9 +381,11 @@ curl http://127.0.0.1:8080/api/health
 
 ### 添加新API端点
 1. 在 `ExternalApiServiceTrait` 中定义方法
-2. 在 `ExternalApiService` 中实现业务逻辑
-3. 在 `src-core/src/external_api.rs` 中添加 handler 函数
-4. 在两个平台的适配器中添加路由
+2. 在 `ExternalApiService` 中实现业务逻辑 (注入所需的新服务依赖)
+3. 在 `src-core/src/external_api.rs` 中添加数据转换函数和handler函数
+4. 在两个平台的适配器中添加路由和查询参数结构体
+5. 在平台适配器中更新 `ExternalApiService::new()` 调用，传入新的服务依赖
+6. 更新文档和测试脚本
 
 ### 修改数据格式
 1. 更新 `src-core/src/external_api.rs` 中的转换函数
