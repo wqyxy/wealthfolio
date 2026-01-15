@@ -59,5 +59,5 @@ COPY --from=backend /wealthfolio-server /usr/local/bin/wealthfolio-server
 COPY --from=frontend /web-dist ./dist
 ENV WF_DB_PATH=/data/wealthfolio.db
 VOLUME ["/data"]
-EXPOSE 8080
+EXPOSE 8088 3333
 CMD ["/usr/local/bin/wealthfolio-server"]

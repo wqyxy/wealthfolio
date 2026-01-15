@@ -4,8 +4,9 @@
 # 测试所有External API endpoints
 
 # 配置
+API_IP="127.0.0.1"
 API_PORT=3333
-API_URL="http://127.0.0.1:$API_PORT"
+API_URL="http://$API_IP:$API_PORT"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -31,16 +32,26 @@ while [[ $# -gt 0 ]]; do
             QUIET_MODE="true"
             shift
             ;;
+        --ip)
+            API_IP="$2"
+            shift 2
+            ;;
+        --port)
+            API_PORT="$2"
+            shift 2
+            ;;
         --help)
-            echo "Usage: $0 [--desktop|--server|--quiet|--help]"
+            echo "Usage: $0 [--desktop|--server|--quiet|--ip IP|--port PORT|--help]"
             echo ""
             echo "Options:"
             echo "  --desktop  Test after starting with 'pnpm tauri dev'"
             echo "  --server   Test after starting with 'cargo run --manifest-path src-server/Cargo.toml'"
             echo "  --quiet    Quiet mode - show only one line per test result"
+            echo "  --ip IP     Specify IP address (default: 127.0.0.1)"
+            echo "  --port PORT Specify port number (default: 3333)"
             echo "  --help     Show this help message"
             echo ""
-            echo "If no option specified, test the API at port $API_PORT"
+            echo "If no option specified, test the API at $API_IP:$API_PORT"
             exit 0
             ;;
         *)
@@ -50,6 +61,9 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# 更新API_URL基于解析的参数
+API_URL="http://$API_IP:$API_PORT"
 
 print_header() {
     echo "🧪 Testing Wealthfolio External API"
@@ -376,6 +390,6 @@ if [ "$QUIET_MODE" != "true" ]; then
     echo "  - Data structures are designed for quantitative analysis"
     echo "  - Values are in base currency with original currency preserved"
     echo "  - Timestamps use RFC3339 format"
-    echo "  - API runs on port $API_PORT for both desktop and server modes"
+    echo "  - API runs on $API_IP:$API_PORT for both desktop and server modes"
     echo "======================================================"
 fi

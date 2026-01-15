@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  wealthfolio:
+    image: afadil/wealthfolio:latest
+    container_name: wealthfolio
+    restart: unless-stopped
+    ports:
+      - "8088:8088"  # Web服务器端口
+      - "3333:3333"  # External API端口
+    volumes:
+      - wealthfolio-data:/data  # 数据持久化卷，确保数据库和配置不会因容器重启丢失
+    environment:
+      - WF_DB_PATH=/data/wealthfolio.db  # 指定数据库存储路径
+      # ↓ 以下为安全相关的环境变量，请从文档中的第1步和第2步生成并粘贴相应的密钥和哈希值（不要包含占位符或示例值）
+      - WF_SECRET_KEY=YOUR_GENERATED_32_BYTE_BASE64_SECRET_KEY_HERE  # 使用openssl rand -base64 32 生成，替换为实际值
+      - WF_AUTH_PASSWORD_HASH=YOUR_FULL_ARGON2_HASH_HERE  # 使用适当工具生成完整的Argon2哈希，替换为实际值
+      # 可选：其他自定义环境变量，可根据应用需求添加，如日志级别或超时设置
+    networks:
+      - wealthfolio-network  # 可选网络隔离，提升安全性
+
+volumes:
+  wealthfolio-data:
+    driver: local
+
+networks:
+  wealthfolio-network:
+    driver: bridge

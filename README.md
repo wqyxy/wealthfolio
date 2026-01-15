@@ -433,12 +433,105 @@ The container supports all `WF_*` environment variables documented in the
 ### Ports
 
 - `8088` - HTTP server (serves both API and static frontend)
+- `3333` - External API server (quantitative analysis endpoints)
 
 Access the application at `http://localhost:8088` after starting the container.
+
+The External API for quantitative analysis will be available at `http://localhost:3333`.
 
 **Important:** The server must bind to `0.0.0.0` (all interfaces) inside the
 container to be accessible from your host machine. Binding to `127.0.0.1` will
 make the app only accessible from within the container.
+
+### Docker Compose Deployment
+
+For easier deployment and management, you can use Docker Compose to run Wealthfolio with persistent storage and networking.
+
+#### Quick Setup
+
+1. **Clone or download the repository** (contains `docker-compose.yml`):
+   ```bash
+   git clone https://github.com/afadil/wealthfolio.git
+   cd wealthfolio
+   ```
+
+2. **Generate required security keys** (see below for details):
+   ```bash
+   # Generate 32-byte base64 secret key
+   WF_SECRET_KEY=$(openssl rand -base64 32)
+   echo "WF_SECRET_KEY=$WF_SECRET_KEY"
+
+   # Generate Argon2 password hash (replace 'your-password' with your actual password)
+   WF_AUTH_PASSWORD_HASH=$(argon2 "your-password" -id -e)
+   echo "WF_AUTH_PASSWORD_HASH=$WF_AUTH_PASSWORD_HASH"
+   ```
+
+3. **Create environment file** (`.env.compose`):
+   ```bash
+   cat > .env.compose << EOF
+   WF_SECRET_KEY=$WF_SECRET_KEY
+   WF_AUTH_PASSWORD_HASH=$WF_AUTH_PASSWORD_HASH
+   EOF
+   ```
+
+4. **Start the service**:
+   ```bash
+   docker-compose up -d
+   ```
+
+5. **Access Wealthfolio**:
+   - Web UI: http://localhost:8088
+   - External API: http://localhost:3333
+   - Stop: `docker-compose down`
+   - View logs: `docker-compose logs -f`
+
+#### Docker Compose Configuration
+
+The `docker-compose.yml` file includes:
+
+- **Service**: `wealthfolio` - Main application container
+- **Ports**: `8088:8088` (HTTP server), `3333:3333` (External API)
+- **Volumes**: `wealthfolio-data:/data` - Persistent database storage
+- **Networks**: Custom bridge network for isolation
+- **Environment**: Security keys and database configuration
+
+#### Security Setup
+
+Before first run, you must generate and configure security credentials:
+
+**1. Generate Secret Key** (required):
+```bash
+openssl rand -base64 32
+```
+This creates a 32-byte base64-encoded key for encrypting secrets and JWT signing.
+
+**2. Generate Password Hash** (optional, enables authentication):
+```bash
+# Using argon2 command-line tool
+argon2 "your-secure-password" -id -e
+
+# Or online at https://argon2.online
+# Copy the full output starting with $argon2id$
+```
+
+**3. Configure Environment**:
+Set these values in your environment or `.env.compose` file:
+- `WF_SECRET_KEY`: The generated base64 secret key
+- `WF_AUTH_PASSWORD_HASH`: The full Argon2 hash string
+
+#### Customization
+
+- **Port**: Change `8088:8088` and `3333:3333` to your preferred ports in `docker-compose.yml`
+- **Data Location**: Modify volume mount path as needed
+- **Networking**: Adjust network settings for your environment
+- **Additional Environment Variables**: See [Web Mode Configuration](#configuration)
+
+#### Production Considerations
+
+- Use strong, unique passwords for authentication
+- Regularly backup the `wealthfolio-data` volume
+- Consider using Docker secrets for sensitive environment variables
+- Monitor container logs for security events
 
 ### Development with DevContainer
 
