@@ -251,10 +251,19 @@ export function mergePositions(
       );
 
       // Calculate total unrealized P/L from original positions (no conversion needed)
-      const totalUnrealizedPL = group.reduce((sum, pos) => sum + pos.unrealizedPL, 0);
+      const totalUnrealizedPLBase = group.reduce((sum, pos) =>
+        sum + convertToBaseCurrencyAmount(pos.unrealizedPL, pos.currency, baseCurrency, convertToBaseCurrency), 0
+      );
+
+      const totalUnrealizedPL = convertFromBaseCurrencyAmount(
+        totalUnrealizedPLBase,
+        baseCurrency,
+        primary.currency,
+        convertToBaseCurrency
+      );
 
       // Calculate unrealized return using base currency values (for consistency)
-      const mergedUnrealizedReturnPercent = totalCost > 0 ? totalUnrealizedPL / totalCost : 0;
+      const mergedUnrealizedReturnPercent = totalCost > 0 ? totalUnrealizedPLBase / totalCost : 0;
 
       // Step 7: Merge days open using quantity weighting
       // Use equivalent quantities for weighting
